@@ -1,0 +1,82 @@
+# EIAM Platform Configuration
+
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug" # debug, release, test
+  
+# Database configuration
+database:
+  driver: "mysql" # mysql, postgres
+  host: "127.0.0.1"
+  port: 3306
+  username: "root"
+  password: "123456"
+  dbname: "eiam_platform"
+  charset: "utf8mb4"
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 300 # seconds
+
+# Redis configuration
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  password: "123456"
+  db: 0
+  pool_size: 10
+  min_idle_conns: 5
+
+# JWT configuration
+jwt:
+  secret: "7INRsRORIP6OoPQP"
+  access_token_expire: 3600 # seconds (1 hour)
+  refresh_token_expire: 604800 # seconds (7 days)
+  issuer: "eiam-platform"
+
+# Log configuration
+log:
+  level: "info" # debug, info, warn, error
+  format: "json" # json, console
+  output: ["stdout", "file"] # stdout, file, can be configured simultaneously
+  log_dir: "logs" # log directory, default is logs
+  max_size: 100 # MB
+  max_backups: 7
+  max_age: 30 # days
+  compress: true
+  rotate_by_date: true # rotate logs by date
+
+# Encryption configuration
+encryption:
+  bcrypt_cost: 12
+
+# CORS configuration
+cors:
+  allow_origins: ["*"]
+  allow_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  allow_headers: ["*"]
+  expose_headers: ["Content-Length"]
+  allow_credentials: true
+  max_age: 12 # hours
+
+# Login configuration
+login:
+  # Default login method: password, otp
+  default_method: "password"
+  # Whether to enable OTP
+  enable_otp: true
+  # Whether to enable third-party login (reserved for phase 2)
+  enable_third_party: false
+
+# IdP configuration (for connecting to external SPs)
+idp:
+  # Default session timeout
+  default_session_timeout: 1800 # seconds (30 minutes)
+  # Maximum concurrent sessions
+  max_concurrent_sessions: 5
+  # Enable single sign-out
+  enable_single_logout: true
+  # Remember me feature
+  enable_remember_me: true
+  remember_me_duration: 2592000 # seconds (30 days)

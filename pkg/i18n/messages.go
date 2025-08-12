@@ -1,0 +1,115 @@
+package i18n
+
+// Common messages
+const (
+	// Success messages
+	SuccessCreated         = "Created successfully"
+	SuccessUpdated         = "Updated successfully"
+	SuccessDeleted         = "Deleted successfully"
+	Success                = "Success"
+	LoginSuccess           = "Login successful"
+	LogoutSuccess          = "Logout successful"
+	TokenRefreshed         = "Token refreshed successfully"
+	SuccessOTPSent         = "OTP sent successfully"
+	SuccessOTPVerified     = "OTP verified successfully"
+	SuccessPasswordChanged = "Password changed successfully"
+	SuccessPasswordReset   = "Password reset successfully"
+	SuccessOTPEnabled      = "OTP enabled successfully"
+	SuccessOTPDisabled     = "OTP disabled successfully"
+
+	// Error messages
+	InvalidCredentials       = "Invalid username or password"
+	InvalidToken             = "Invalid access token"
+	TokenExpired             = "Token expired"
+	Unauthorized             = "Unauthorized"
+	Forbidden                = "Forbidden"
+	NotFound                 = "Resource not found"
+	BadRequest               = "Bad request"
+	InternalServerError      = "Internal server error"
+	DatabaseConnectionFailed = "Database connection failed"
+	RedisConnectionFailed    = "Redis connection failed"
+	InvalidOTP               = "Invalid OTP"
+	OTPExpired               = "OTP expired"
+	UserNotFound             = "User not found"
+	UserExists               = "User already exists"
+	InvalidEmail             = "Invalid email format"
+	InvalidPhone             = "Invalid phone format"
+	WeakPassword             = "Password is too weak"
+	OldPassword              = "Old password is incorrect"
+	InvalidRequestData       = "Invalid request data"
+	UserInactive             = "User account is inactive"
+	AccountLocked            = "Account is locked"
+	OTPRequired              = "OTP verification required"
+
+	// Status messages
+	StatusHealthy      = "healthy"
+	StatusUnhealthy    = "unhealthy"
+	StatusConnected    = "connected"
+	StatusDisconnected = "disconnected"
+
+	// Health check messages
+	HealthCheckSuccess = "Service is healthy"
+	HealthCheckFailure = "Service is unhealthy"
+
+	// API messages
+	APINotImplemented = "API not implemented yet"
+	APIMaintenance    = "API under maintenance"
+
+	// Validation messages
+	ValidationRequired  = "This field is required"
+	ValidationMinLength = "Minimum length is %d characters"
+	ValidationMaxLength = "Maximum length is %d characters"
+	ValidationEmail     = "Invalid email format"
+	ValidationPhone     = "Invalid phone format"
+	ValidationPassword  = "Password must be at least 8 characters long"
+	ValidationUsername  = "Username must be 3-20 characters long"
+
+	// Business logic messages
+	UserCreatedByAdmin          = "User created by administrator"
+	UserUpdatedByAdmin          = "User updated by administrator"
+	UserDeletedByAdmin          = "User deleted by administrator"
+	OrganizationNotFound        = "Organization not found"
+	OrganizationExists          = "Organization already exists"
+	EmailExists                 = "Email already exists"
+	ManagerNotFound             = "Manager user not found"
+	CannotDeleteOrgWithChildren = "Cannot delete organization with child organizations"
+	CannotDeleteOrgWithUsers    = "Cannot delete organization with users"
+	ProfileUpdated              = "Profile updated successfully"
+	OrganizationCreated         = "Organization created successfully"
+	OrganizationUpdated         = "Organization updated successfully"
+	OrganizationDeleted         = "Organization deleted successfully"
+	RoleCreated                 = "Role created successfully"
+	RoleUpdated                 = "Role updated successfully"
+	RoleDeleted                 = "Role deleted successfully"
+	PermissionCreated           = "Permission created successfully"
+	PermissionUpdated           = "Permission updated successfully"
+	PermissionDeleted           = "Permission deleted successfully"
+	ApplicationCreated          = "Application created successfully"
+	ApplicationUpdated          = "Application updated successfully"
+	ApplicationDeleted          = "Application deleted successfully"
+	AppGroupCreated             = "Application group created successfully"
+	AppGroupUpdated             = "Application group updated successfully"
+	AppGroupDeleted             = "Application group deleted successfully"
+
+	// System messages
+	SystemStartup          = "EIAM IdP platform starting..."
+	SystemStarted          = "EIAM IdP platform started"
+	SystemShutdown         = "EIAM IdP platform shutting down..."
+	SystemShutdownComplete = "EIAM IdP platform shutdown complete"
+	DatabaseConnected      = "Database connected successfully"
+	RedisConnected         = "Redis connected successfully"
+	MigrationStarted       = "Database migration started"
+	MigrationComplete      = "Database migration completed"
+	MigrationFailed        = "Database migration failed"
+
+	// Log messages
+	LogRequestReceived     = "HTTP request received"
+	LogRequestCompleted    = "HTTP request completed"
+	LogJWTValidationFailed = "JWT validation failed"
+	LogDatabaseError       = "Database error occurred"
+	LogRedisError          = "Redis error occurred"
+	LogSystemError         = "System error occurred"
+	LogSystemException     = "System exception"
+	LogIPNotWhitelisted    = "IP address not in whitelist"
+	LogAccessDenied        = "Access denied"
+)

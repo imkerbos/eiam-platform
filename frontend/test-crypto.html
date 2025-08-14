@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端MD5加密测试</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>前端MD5加密测试</h1>
+    
+    <div>
+        <label>密码: </label>
+        <input type="password" id="password" value="admin123">
+        <button onclick="testMD5()">测试MD5</button>
+        <button onclick="testLogin()">测试登录</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        function encryptPassword(password) {
+            try {
+                return CryptoJS.MD5(password).toString()
+            } catch (error) {
+                console.error('MD5加密失败:', error)
+                return password
+            }
+        }
+        
+        function testMD5() {
+            const password = document.getElementById('password').value
+            const encrypted = encryptPassword(password)
+            
+            const result = document.createElement('div')
+            result.className = 'result success'
+            result.textContent = `原始密码: ${password}\nMD5值: ${encrypted}`
+            
+            document.getElementById('results').appendChild(result)
+        }
+        
+        async function testLogin() {
+            const password = document.getElementById('password').value
+            const encrypted = encryptPassword(password)
+            
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: 'admin',
+                        password: encrypted
+                    })
+                })
+                
+                const data = await response.json()
+                
+                const result = document.createElement('div')
+                result.className = response.ok ? 'result success' : 'result error'
+                result.textContent = response.ok ? 
+                    `登录成功: ${JSON.stringify(data, null, 2)}` :
+                    `登录失败: ${data.message}`
+                
+                document.getElementById('results').appendChild(result)
+            } catch (error) {
+                const result = document.createElement('div')
+                result.className = 'result error'
+                result.textContent = `请求失败: ${error.message}`
+                document.getElementById('results').appendChild(result)
+            }
+        }
+    </script>
+</body>
+</html>

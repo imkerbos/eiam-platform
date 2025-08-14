@@ -41,9 +41,9 @@ request.interceptors.response.use(
       return data.data || data
     }
     
-    // Handle business error
-    message.error(data.message || 'Request failed')
-    return Promise.reject(new Error(data.message || 'Request failed'))
+    // Handle business error - don't show message here, let the component handle it
+    const errorMessage = data.message || 'Request failed'
+    return Promise.reject(new Error(errorMessage))
   },
   (error) => {
     // Handle HTTP error
@@ -52,10 +52,7 @@ request.interceptors.response.use(
       
       switch (status) {
         case 401:
-          message.error('Unauthorized, please login again')
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          window.location.href = '/login'
+          // Don't show message here, let the login component handle it
           break
         case 403:
           message.error('Forbidden, insufficient permissions')

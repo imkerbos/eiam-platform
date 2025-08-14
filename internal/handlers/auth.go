@@ -121,7 +121,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// 验证密码
+	// 验证密码（前端已经MD5加密）
 	if !utils.CheckPassword(req.Password, user.Password) {
 		// 更新失败登录次数
 		user.FailedCount++

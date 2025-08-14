@@ -381,3 +381,226 @@ func getCategoryFromKey(key string) string {
 	}
 	return "other"
 }
+
+// DashboardStats represents dashboard statistics
+type DashboardStats struct {
+	TotalUsers         int `json:"totalUsers"`
+	TotalOrganizations int `json:"totalOrganizations"`
+	ActiveSessions     int `json:"activeSessions"`
+	TotalApplications  int `json:"totalApplications"`
+}
+
+// RecentActivity represents a recent activity
+type RecentActivity struct {
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Icon        string    `json:"icon"`
+	Time        string    `json:"time"`
+	User        string    `json:"user"`
+	Action      string    `json:"action"`
+	Resource    string    `json:"resource"`
+	Status      string    `json:"status"`
+	IPAddress   string    `json:"ip_address"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// SystemStatus represents system component status
+type SystemStatus struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Value   string `json:"value"`
+	Details any    `json:"details,omitempty"`
+}
+
+// DashboardData represents complete dashboard data
+type DashboardData struct {
+	Stats            DashboardStats   `json:"stats"`
+	RecentActivities []RecentActivity `json:"recentActivities"`
+	SystemStatus     []SystemStatus   `json:"systemStatus"`
+}
+
+// GetDashboardData returns dashboard statistics and recent activities
+func GetDashboardData(c *gin.Context) {
+	var stats DashboardStats
+	var activities []RecentActivity
+	var systemStatus []SystemStatus
+
+	// Get user count
+	var userCount int64
+	if err := database.DB.Model(&models.User{}).Count(&userCount).Error; err != nil {
+		logger.ErrorError("Failed to count users", zap.Error(err))
+	}
+	stats.TotalUsers = int(userCount)
+
+	// Get organization count
+	var orgCount int64
+	if err := database.DB.Model(&models.Organization{}).Count(&orgCount).Error; err != nil {
+		logger.ErrorError("Failed to count organizations", zap.Error(err))
+	}
+	stats.TotalOrganizations = int(orgCount)
+
+	// Get application count (placeholder for now)
+	stats.TotalApplications = 0
+
+	// Get active sessions (placeholder for now)
+	stats.ActiveSessions = 1
+
+	// Get recent login activities
+	var loginLogs []models.UserLoginLog
+	if err := database.DB.Order("created_at DESC").Limit(10).Find(&loginLogs).Error; err != nil {
+		logger.ErrorError("Failed to get login logs", zap.Error(err))
+	}
+
+	for _, log := range loginLogs {
+		activity := RecentActivity{
+			ID:          log.ID,
+			Title:       "User Login",
+			Description: log.UserID + " logged in",
+			Icon:        "user",
+			Time:        timeAgo(log.CreatedAt),
+			User:        log.UserID,
+			Action:      "login",
+			Resource:    "system",
+			Status:      boolToString(log.Success),
+			IPAddress:   log.LoginIP,
+			CreatedAt:   log.CreatedAt,
+		}
+		activities = append(activities, activity)
+	}
+
+	// System status
+	systemStatus = []SystemStatus{
+		{
+			Name:   "Database",
+			Status: "success",
+			Value:  "Connected",
+		},
+		{
+			Name:   "Redis",
+			Status: "success",
+			Value:  "Connected",
+		},
+		{
+			Name:   "API Server",
+			Status: "success",
+			Value:  "Running",
+		},
+	}
+
+	dashboardData := DashboardData{
+		Stats:            stats,
+		RecentActivities: activities,
+		SystemStatus:     systemStatus,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Dashboard data retrieved successfully",
+		"data":    dashboardData,
+	})
+}
+
+// GetSystemStats returns system statistics
+func GetSystemStats(c *gin.Context) {
+	var stats DashboardStats
+
+	// Get user count
+	var userCount int64
+	if err := database.DB.Model(&models.User{}).Count(&userCount).Error; err != nil {
+		logger.ErrorError("Failed to count users", zap.Error(err))
+	}
+	stats.TotalUsers = int(userCount)
+
+	// Get organization count
+	var orgCount int64
+	if err := database.DB.Model(&models.Organization{}).Count(&orgCount).Error; err != nil {
+		logger.ErrorError("Failed to count organizations", zap.Error(err))
+	}
+	stats.TotalOrganizations = int(orgCount)
+
+	// Placeholder values
+	stats.TotalApplications = 0
+	stats.ActiveSessions = 1
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "System stats retrieved successfully",
+		"data":    stats,
+	})
+}
+
+// GetRecentActivities returns recent activities
+func GetRecentActivities(c *gin.Context) {
+	limit := 10 // default limit
+
+	var loginLogs []models.UserLoginLog
+	if err := database.DB.Order("created_at DESC").Limit(limit).Find(&loginLogs).Error; err != nil {
+		logger.ErrorError("Failed to get login logs", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	var activities []RecentActivity
+	for _, log := range loginLogs {
+		activity := RecentActivity{
+			ID:          log.ID,
+			Title:       "User Login",
+			Description: log.UserID + " logged in",
+			Icon:        "user",
+			Time:        timeAgo(log.CreatedAt),
+			User:        log.UserID,
+			Action:      "login",
+			Resource:    "system",
+			Status:      boolToString(log.Success),
+			IPAddress:   log.LoginIP,
+			CreatedAt:   log.CreatedAt,
+		}
+		activities = append(activities, activity)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Recent activities retrieved successfully",
+		"data":    activities,
+	})
+}
+
+// boolToString converts bool to string
+func boolToString(b bool) string {
+	if b {
+		return "success"
+	}
+	return "failed"
+}
+
+// timeAgo returns a human-readable time ago string
+func timeAgo(t time.Time) string {
+	duration := time.Since(t)
+
+	if duration < time.Minute {
+		return "just now"
+	} else if duration < time.Hour {
+		minutes := int(duration.Minutes())
+		if minutes == 1 {
+			return "1 minute ago"
+		}
+		return string(rune(minutes)) + " minutes ago"
+	} else if duration < 24*time.Hour {
+		hours := int(duration.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return string(rune(hours)) + " hours ago"
+	} else {
+		days := int(duration.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return string(rune(days)) + " days ago"
+	}
+}

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单MD5测试</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body>
+    <h1>简单MD5测试</h1>
+    <button onclick="testMD5()">测试MD5</button>
+    <div id="result"></div>
+
+    <script>
+        function testMD5() {
+            try {
+                const password = 'admin123'
+                console.log('原始密码:', password)
+                
+                const encrypted = CryptoJS.MD5(password).toString()
+                console.log('MD5加密后:', encrypted)
+                
+                document.getElementById('result').innerHTML = `
+                    <p>原始密码: ${password}</p>
+                    <p>MD5值: ${encrypted}</p>
+                    <p>预期MD5: 0192023a7bbd73250516f069df18b500</p>
+                    <p>匹配: ${encrypted === '0192023a7bbd73250516f069df18b500' ? '✅ 正确' : '❌ 错误'}</p>
+                `
+            } catch (error) {
+                console.error('MD5测试失败:', error)
+                document.getElementById('result').innerHTML = `<p style="color: red;">错误: ${error.message}</p>`
+            }
+        }
+    </script>
+</body>
+</html>

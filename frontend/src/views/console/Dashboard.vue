@@ -106,6 +106,7 @@ import {
   AppstoreOutlined
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { getDashboardData, getSystemHealth } from '@/api/system'
 
 const userStore = useUserStore()
 const debugInfo = ref('')
@@ -185,12 +186,34 @@ const testAPI = async () => {
   }
 }
 
-onMounted(() => {
-  // Load dashboard data
-  stats.totalUsers = 2
-  stats.totalOrganizations = 2
-  stats.activeSessions = 1
-  stats.totalApplications = 0
+onMounted(async () => {
+  try {
+    // Load dashboard data from API
+    const dashboardData = await getDashboardData()
+    
+    // Update stats
+    Object.assign(stats, dashboardData.stats)
+    
+    // Update recent activities
+    recentActivities.value = dashboardData.recentActivities.map(activity => ({
+      title: activity.title,
+      description: activity.description,
+      icon: activity.icon,
+      time: activity.time
+    }))
+    
+    // Update system status
+    systemStatus.value = dashboardData.systemStatus
+  } catch (error: any) {
+    console.error('Failed to load dashboard data:', error)
+    message.error('Failed to load dashboard data')
+    
+    // Fallback to demo data
+    stats.totalUsers = 2
+    stats.totalOrganizations = 2
+    stats.activeSessions = 1
+    stats.totalApplications = 0
+  }
 })
 </script>
 

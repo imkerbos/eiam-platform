@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { User } from '@/types/api'
 import { login as loginAPI, logout as logoutAPI, refreshToken as refreshTokenAPI, getCurrentUser as getCurrentUserAPI } from '@/api/auth'
+import { encryptPassword } from '@/utils/crypto'
 
 export const useUserStore = defineStore('user', () => {
   // State
@@ -35,9 +36,12 @@ export const useUserStore = defineStore('user', () => {
 
   const login = async (username: string, password: string, otpCode?: string) => {
     try {
+      // 加密密码
+      const encryptedPassword = encryptPassword(password)
+      
       const response = await loginAPI({
         username,
-        password,
+        password: encryptedPassword,
         otp_code: otpCode
       })
       

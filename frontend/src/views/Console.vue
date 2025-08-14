@@ -77,6 +77,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
   DashboardOutlined,
+  UserOutlined,
   SafetyOutlined,
   AppstoreOutlined,
   SettingOutlined

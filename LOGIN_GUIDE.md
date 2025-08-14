@@ -46,6 +46,7 @@ make seed
 - **前端应用**: http://localhost:3000
 - **后端API**: http://localhost:8080
 - **健康检查**: http://localhost:8080/health
+- **MD5登录测试**: http://localhost:3000/test-md5-login.html
 
 ## 🔐 默认账户
 
@@ -119,7 +120,21 @@ Authorization: Bearer <access_token>
 
 ## 🧪 测试登录
 
-### 1. 使用测试页面
+### 1. 使用MD5登录测试页面
+
+访问 `test-md5-login.html` 文件进行MD5加密和登录测试：
+
+```bash
+# 在浏览器中打开
+open test-md5-login.html
+```
+
+这个测试页面可以：
+- 查看MD5加密过程
+- 测试MD5加密后的登录功能
+- 验证错误密码被正确拒绝
+
+### 2. 使用原始测试页面
 
 访问 `test-login.html` 文件进行API测试：
 
@@ -150,8 +165,14 @@ curl http://localhost:8080/health | jq .
 
 ## 🔒 安全特性
 
-### 密码安全
-- 使用bcrypt加密存储密码
+### 密码传输安全
+- **前端密码加密**: 使用MD5加密传输密码
+- **加密算法**: MD5哈希算法
+- **传输安全**: 密码在前端加密后传输到后端
+- **统一格式**: 前后端使用相同的MD5格式
+
+### 密码存储安全
+- 使用MD5哈希存储密码
 - 支持密码复杂度验证
 - 密码失败次数限制（5次后锁定30分钟）
 
@@ -221,6 +242,17 @@ mysql -u root -p -e "SHOW DATABASES;"
 - 检查令牌是否过期
 - 确认令牌格式正确
 - 验证JWT密钥配置
+
+### 5. 账户被锁定
+如果账户因多次登录失败被锁定，可以使用以下命令重置：
+
+```bash
+# 重置admin用户锁定状态
+make reset-user
+
+# 或者指定用户名重置
+go run cmd/reset-user/main.go -username admin
+```
 
 ### 日志查看
 

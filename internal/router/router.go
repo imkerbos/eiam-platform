@@ -158,6 +158,15 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		system.GET("/security-settings", handlers.GetSecuritySettingsHandler)
 	}
 
+	// 系统API（需要认证）
+	systemAPI := console.Group("/dashboard")
+	systemAPI.Use(middleware.AuthMiddleware(jwtManager))
+	{
+		systemAPI.GET("", handlers.GetDashboardData)
+		systemAPI.GET("/stats", handlers.GetSystemStats)
+		systemAPI.GET("/activities", handlers.GetRecentActivities)
+	}
+
 	// 日志管理（需要认证）
 	logs := console.Group("/logs")
 	logs.Use(middleware.AuthMiddleware(jwtManager))

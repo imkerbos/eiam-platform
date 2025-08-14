@@ -5,11 +5,14 @@
 # 默认目标
 help:
 	@echo "EIAM Platform 管理命令:"
-	@echo "  build     - 构建项目"
-	@echo "  run       - 运行服务器"
-	@echo "  migrate   - 运行数据库迁移"
-	@echo "  test      - 运行测试"
-	@echo "  clean     - 清理构建文件"
+	@echo "  build          - 构建项目"
+	@echo "  run            - 运行服务器"
+	@echo "  migrate        - 运行数据库迁移"
+	@echo "  seed           - 运行数据库种子"
+	@echo "  reset-user     - 重置用户锁定状态"
+	@echo "  update-password - 更新用户密码"
+	@echo "  test           - 运行测试"
+	@echo "  clean          - 清理构建文件"
 
 # 构建项目
 build:
@@ -31,6 +34,16 @@ migrate:
 seed:
 	@echo "运行数据库种子..."
 	go run cmd/seed/main.go
+
+# 重置用户锁定状态
+reset-user:
+	@echo "重置用户锁定状态..."
+	go run cmd/reset-user/main.go
+
+# 更新用户密码
+update-password:
+	@echo "更新用户密码..."
+	go run cmd/update-password/main.go
 
 # 运行测试
 test:

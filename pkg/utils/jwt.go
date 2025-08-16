@@ -173,13 +173,22 @@ func (j *JWTManager) GetRefreshTokenExpiration() time.Duration {
 	return j.refreshTokenDuration
 }
 
-// GenerateAccessToken generate access token (simple function)
+// GenerateAccessToken generate access token (simple function - legacy)
 func GenerateAccessToken(userID, username, secret string, expireSeconds int) (string, error) {
+	return GenerateAccessTokenWithUserInfo(userID, username, "", "", []string{}, []string{}, secret, expireSeconds)
+}
+
+// GenerateAccessTokenWithUserInfo generate access token with complete user info
+func GenerateAccessTokenWithUserInfo(userID, username, email, displayName string, roles, permissions []string, secret string, expireSeconds int) (string, error) {
 	now := time.Now()
 	claims := AccessTokenClaims{
-		UserID:    userID,
-		Username:  username,
-		TokenType: "access",
+		UserID:      userID,
+		Username:    username,
+		Email:       email,
+		DisplayName: displayName,
+		Roles:       roles,
+		Permissions: permissions,
+		TokenType:   "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expireSeconds) * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(now),

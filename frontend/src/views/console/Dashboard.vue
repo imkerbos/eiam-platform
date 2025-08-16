@@ -87,6 +87,7 @@
           <a-button @click="checkToken">Check Token</a-button>
           <a-button @click="clearToken">Clear Token</a-button>
           <a-button @click="testAPI">Test API</a-button>
+          <a-button @click="testDashboardAPI">Test Dashboard API</a-button>
         </a-space>
         <div v-if="debugInfo" style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
           <pre>{{ debugInfo }}</pre>
@@ -106,7 +107,7 @@ import {
   AppstoreOutlined
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { getDashboardData, getSystemHealth } from '@/api/system'
+import { getDashboardData } from '@/api/system'
 
 const userStore = useUserStore()
 const debugInfo = ref('')
@@ -181,6 +182,15 @@ const testAPI = async () => {
     const response = await fetch('/health')
     const data = await response.json()
     debugInfo.value = JSON.stringify(data, null, 2)
+  } catch (error: any) {
+    debugInfo.value = JSON.stringify({ error: error.message }, null, 2)
+  }
+}
+
+const testDashboardAPI = async () => {
+  try {
+    const response = await getDashboardData()
+    debugInfo.value = JSON.stringify(response, null, 2)
   } catch (error: any) {
     debugInfo.value = JSON.stringify({ error: error.message }, null, 2)
   }

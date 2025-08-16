@@ -54,7 +54,9 @@ type OrganizationInfo struct {
 	Path        string `json:"path"`
 	Sort        int    `json:"sort"`
 	Description string `json:"description"`
-	Manager     string `json:"manager"`
+	Manager     string `json:"manager"`      // 保持兼容性，显示manager名称
+	ManagerID   string `json:"manager_id"`   // 新增：manager的用户ID
+	ManagerName string `json:"manager_name"` // 新增：manager的显示名称
 	Location    string `json:"location"`
 	Phone       string `json:"phone"`
 	Email       string `json:"email"`
@@ -169,6 +171,21 @@ func GetOrganizationsHandler(c *gin.Context) {
 		if org.ParentID != nil {
 			parentID = *org.ParentID
 		}
+
+		// Get manager username if manager ID exists
+		managerID := org.Manager
+		managerName := ""
+		if org.Manager != "" {
+			var managerUser models.User
+			if err := database.DB.Select("username, display_name").Where("id = ?", org.Manager).First(&managerUser).Error; err == nil {
+				if managerUser.DisplayName != "" {
+					managerName = managerUser.DisplayName
+				} else {
+					managerName = managerUser.Username
+				}
+			}
+		}
+
 		items[i] = OrganizationInfo{
 			ID:          org.ID,
 			Name:        org.Name,
@@ -180,7 +197,9 @@ func GetOrganizationsHandler(c *gin.Context) {
 			Path:        org.Path,
 			Sort:        org.Sort,
 			Description: org.Description,
-			Manager:     org.Manager,
+			Manager:     managerName, // 显示名称，向后兼容
+			ManagerID:   managerID,   // 用户ID，用于编辑
+			ManagerName: managerName, // 显示名称，明确字段
 			Location:    org.Location,
 			Phone:       org.Phone,
 			Email:       org.Email,
@@ -283,7 +302,7 @@ func CreateOrganizationHandler(c *gin.Context) {
 
 	// 检查父级组织是否存在
 	if req.ParentID != "" {
-		if err := database.DB.First(&models.Organization{}, req.ParentID).Error; err != nil {
+		if err := database.DB.Where("id = ?", req.ParentID).First(&models.Organization{}).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
 				"message": i18n.OrganizationNotFound,
@@ -316,7 +335,7 @@ func CreateOrganizationHandler(c *gin.Context) {
 	path := "/"
 	if req.ParentID != "" {
 		var parentOrg models.Organization
-		if err := database.DB.First(&parentOrg, req.ParentID).Error; err == nil {
+		if err := database.DB.Where("id = ?", req.ParentID).First(&parentOrg).Error; err == nil {
 			level = parentOrg.Level + 1
 			path = parentOrg.Path + parentOrg.ID + "/"
 		}

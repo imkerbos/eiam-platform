@@ -19,7 +19,10 @@
         row-key="id"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'status'">
+          <template v-if="column.key === 'avatar'">
+            <UserAvatar :user="record" :size="32" />
+          </template>
+          <template v-else-if="column.key === 'status'">
             <a-tag :color="record.status === 1 ? 'green' : 'red'">
               {{ record.status === 1 ? 'Active' : 'Inactive' }}
             </a-tag>
@@ -99,6 +102,7 @@ import { PlusOutlined } from '@ant-design/icons-vue'
 import type { User, PaginatedResponse } from '@/types/api'
 import { userApi, organizationApi } from '@/api/index'
 import type { CreateUserRequest, UpdateUserRequest } from '@/api/users'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 // Data
 const loading = ref(false)
@@ -138,6 +142,12 @@ const pagination = reactive({
 })
 
 const columns = [
+  {
+    title: 'Avatar',
+    key: 'avatar',
+    width: 80,
+    align: 'center' as const
+  },
   {
     title: 'Username',
     dataIndex: 'username',
@@ -237,13 +247,26 @@ const showAddUserModal = () => {
 const editUser = (user: User) => {
   modalTitle.value = 'Edit User'
   editingUser.value = user
+  
+  // Convert status string to number if needed
+  let statusValue = user.status
+  if (typeof user.status === 'string') {
+    switch (user.status) {
+      case 'active': statusValue = 1; break
+      case 'inactive': statusValue = 0; break
+      case 'locked': statusValue = 2; break
+      case 'expired': statusValue = 3; break
+      default: statusValue = 1; break
+    }
+  }
+  
   Object.assign(formData, {
     username: user.username,
     email: user.email,
     display_name: user.display_name,
     phone: user.phone,
     organization_id: user.organization_id,
-    status: user.status
+    status: statusValue
   })
   modalVisible.value = true
 }
@@ -270,7 +293,7 @@ const handleModalOk = async () => {
       const updateData: UpdateUserRequest = {
         display_name: formData.display_name,
         phone: formData.phone,
-        status: formData.status
+        status: typeof formData.status === 'string' ? parseInt(formData.status) : formData.status
       }
       // Only include organization_id if it has a value
       if (formData.organization_id) {

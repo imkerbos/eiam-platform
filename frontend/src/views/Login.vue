@@ -119,23 +119,44 @@ const handleLogin = async () => {
   try {
     loading.value = true
     
+    console.log('开始登录...')
     const response = await userStore.login(
       formData.username,
       formData.password,
       showOtp.value ? formData.otp_code : undefined
     )
     
+    console.log('登录成功，响应数据:', response)
+    console.log('用户存储状态:', {
+      isLoggedIn: userStore.isLoggedIn,
+      user: userStore.currentUser,
+      token: userStore.token
+    })
+    
     message.success('Login successful')
     
     // Redirect to console
-    router.push('/console')
+    console.log('准备跳转到控制台...')
+    await router.push('/console')
+    console.log('跳转完成')
   } catch (error: any) {
-    // Handle OTP requirement
-    if (error.message?.includes('OTP')) {
+    console.error('登录失败:', error)
+    
+    // Handle different error types based on error code and message
+    if (error.message?.includes('OTP') || error.message?.includes('require_otp')) {
       showOtp.value = true
       message.info('Please enter your OTP code')
+    } else if (error.message?.includes('Account is locked') || error.message?.includes('账户已被锁定')) {
+      message.error('Account is locked due to multiple failed login attempts. Please contact administrator or try again later.')
+    } else if (error.message?.includes('Invalid credentials') || error.message?.includes('用户名或密码错误')) {
+      message.error('Invalid username or password. Please check your credentials.')
+    } else if (error.message?.includes('User inactive') || error.message?.includes('用户已停用')) {
+      message.error('Your account has been deactivated. Please contact administrator.')
+    } else if (error.message?.includes('Network Error') || error.message?.includes('timeout')) {
+      message.error('Network connection failed. Please check your connection and try again.')
     } else {
-      message.error(error.message || 'Login failed')
+      // Generic error message
+      message.error(error.message || 'Login failed. Please try again.')
     }
   } finally {
     loading.value = false

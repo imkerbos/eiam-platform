@@ -3,20 +3,20 @@ import type { LoginRequest, LoginResponse, RefreshTokenRequest, RefreshTokenResp
 
 // Login API
 export const login = (data: LoginRequest): Promise<LoginResponse> => {
-  return http.post<LoginResponse>('/auth/login', data)
+  return http.post<LoginResponse>('/console/auth/login', data)
 }
 
 // Refresh token API
 export const refreshToken = (data: RefreshTokenRequest): Promise<RefreshTokenResponse> => {
-  return http.post<RefreshTokenResponse>('/auth/refresh', data)
+  return http.post<RefreshTokenResponse>('/console/auth/refresh', data)
 }
 
 // Logout API
 export const logout = (): Promise<void> => {
-  return http.post('/auth/logout')
+  return http.post('/console/auth/logout')
 }
 
 // Get current user info
 export const getCurrentUser = (): Promise<any> => {
-  return http.get('/auth/me')
+  return http.get('/console/auth/me')
 }

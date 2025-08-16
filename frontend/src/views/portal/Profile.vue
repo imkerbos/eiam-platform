@@ -10,9 +10,11 @@
       <a-col :span="8">
         <a-card title="Profile Information" :bordered="false">
           <div class="profile-avatar">
-            <a-avatar :size="120" :src="profileData.avatar">
-              {{ profileData.displayName?.charAt(0) }}
-            </a-avatar>
+            <UserAvatar 
+              :size="120" 
+              :user="profileData"
+              :show-border="true"
+            />
             <a-upload
               v-model:file-list="fileList"
               name="avatar"
@@ -20,7 +22,8 @@
               class="avatar-uploader"
               :show-upload-list="false"
               :before-upload="beforeUpload"
-              @change="handleAvatarChange"
+              :custom-request="handleAvatarChange"
+              accept="image/*"
             >
               <div v-if="!profileData.avatar">
                 <PlusOutlined />
@@ -39,7 +42,7 @@
               <a-tag v-else color="red">Unverified</a-tag>
             </a-descriptions-item>
             <a-descriptions-item label="Display Name">
-              {{ profileData.displayName }}
+              {{ profileData.display_name }}
             </a-descriptions-item>
             <a-descriptions-item label="Phone">
               {{ profileData.phone || 'Not set' }}
@@ -219,6 +222,7 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined, LoginOutlined, KeyOutlined, SafetyOutlined, ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { http } from '@/api/request'
 import { useUserStore } from '@/stores/user'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -232,22 +236,22 @@ const formRef = ref()
 const passwordFormRef = ref()
 
 const profileData = reactive({
-  username: 'admin',
-  email: 'admin@example.com',
-  emailVerified: true,
-  displayName: 'Administrator',
-  phone: '+1234567890',
-  phoneVerified: false,
+  username: userStore.currentUser?.username || 'admin',
+  email: userStore.currentUser?.email || 'admin@example.com',
+  emailVerified: userStore.currentUser?.email_verified || true,
+  display_name: userStore.currentUser?.display_name || 'Administrator', // 改为下划线格式，匹配API和UserAvatar组件
+  phone: userStore.currentUser?.phone || '+1234567890',
+  phoneVerified: userStore.currentUser?.phone_verified || false,
   organizationName: 'Headquarters',
-  status: 'active',
-  enableOTP: false,
-  avatar: ''
+  status: userStore.currentUser?.status || 'active',
+  enableOTP: userStore.currentUser?.enable_otp || false,
+  avatar: userStore.currentUser?.avatar || ''
 })
 
 const formData = reactive({
-  displayName: '',
-  phone: '',
-  email: ''
+  displayName: userStore.currentUser?.display_name || '',
+  phone: userStore.currentUser?.phone || '',
+  email: userStore.currentUser?.email || ''
 })
 
 const passwordForm = reactive({
@@ -321,7 +325,7 @@ const loadProfile = async () => {
     Object.assign(profileData, {
       username: data.username || '',
       email: data.email || '',
-      displayName: data.display_name || '',
+      display_name: data.display_name || '',
       phone: data.phone || '',
       avatar: data.avatar || '',
       status: data.status || '',
@@ -358,39 +362,91 @@ const beforeUpload = (file: File) => {
 
 
 
-const handleAvatarChange = async (info: any) => {
-  if (info.file.status === 'uploading') {
-    return
-  }
-  if (info.file.status === 'done') {
-    try {
-      const formData = new FormData()
-      formData.append('avatar', info.file.originFileObj)
-      
-      const response = await http.post('/portal/profile/avatar', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      })
-      
-      if (response.avatar) {
-        profileData.avatar = response.avatar
-        message.success('Avatar uploaded successfully')
+const handleAvatarChange = async (options: any) => {
+  const { file, onSuccess, onError } = options
+  
+  try {
+    console.log('开始上传头像...', file)
+    
+    const formData = new FormData()
+    formData.append('avatar', file)
+    
+    const response = await http.post('/portal/profile/avatar', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
       }
-    } catch (error) {
-      message.error('Failed to upload avatar')
+    })
+    
+    console.log('头像上传响应:', response)
+    
+    // 更新头像URL - 检查多个可能的字段
+    const avatarUrl = response.avatar || response.data?.avatar || response.avatar_url || response.data?.avatar_url
+    
+    if (avatarUrl) {
+      profileData.avatar = avatarUrl
+      
+      // 同步更新用户store中的头像
+      if (userStore.currentUser) {
+        userStore.setUser({
+          ...userStore.currentUser,
+          avatar: avatarUrl
+        })
+      }
+      
+      message.success('Avatar uploaded successfully')
+      
+      // 通知上传成功
+      onSuccess && onSuccess(response)
+      
+      // 重新加载profile以确保数据一致性
+      await loadProfile()
+    } else {
+      console.error('头像上传响应数据:', response)
+      const errorMsg = 'Upload successful but no avatar URL returned'
+      message.error(errorMsg)
+      onError && onError(new Error(errorMsg))
     }
+  } catch (error: any) {
+    console.error('头像上传失败:', error)
+    const errorMsg = error.message || 'Failed to upload avatar'
+    message.error(errorMsg)
+    onError && onError(error)
   }
 }
 
 const updateProfile = async () => {
   try {
     await formRef.value?.validate()
-    // TODO: Implement API call
-    Object.assign(profileData, formData)
-    message.success('Profile updated successfully')
+    
+    // 调用API更新用户资料
+    const response = await http.put('/portal/profile', {
+      display_name: formData.displayName,
+      phone: formData.phone
+    })
+    
+    if (response.code === 200) {
+      // 更新本地数据
+      Object.assign(profileData, {
+        display_name: formData.displayName,
+        phone: formData.phone
+      })
+      
+      // 关键修复：同步更新用户store中的用户信息
+      if (userStore.currentUser) {
+        userStore.setUser({
+          ...userStore.currentUser,
+          display_name: formData.displayName,
+          phone: formData.phone
+        })
+      }
+      
+      message.success('Profile updated successfully')
+    } else {
+      message.error(response.message || 'Failed to update profile')
+    }
   } catch (error) {
-    message.error('Please check the form')
+    console.error('Update profile error:', error)
+    message.error('Failed to update profile')
   }
 }
 

@@ -96,7 +96,7 @@ func GetUsersHandler(c *gin.Context) {
 	// 分页查询
 	offset := (page - 1) * pageSize
 	var users []models.User
-	err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&users).Error
+	err := query.Preload("Organization").Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&users).Error
 	if err != nil {
 		logger.ErrorError("Failed to get users", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -111,20 +111,30 @@ func GetUsersHandler(c *gin.Context) {
 	items := make([]UserInfo, len(users))
 	for i, user := range users {
 		items[i] = UserInfo{
-			ID:            user.ID,
-			Username:      user.Username,
-			Email:         user.Email,
-			DisplayName:   user.DisplayName,
-			Avatar:        user.Avatar,
-			Status:        user.Status.String(),
-			EmailVerified: user.EmailVerified,
-			PhoneVerified: user.PhoneVerified,
-			EnableOTP:     user.EnableOTP,
+			ID:             user.ID,
+			Username:       user.Username,
+			Email:          user.Email,
+			DisplayName:    user.DisplayName,
+			Avatar:         user.Avatar,
+			Status:         user.Status.String(),
+			EmailVerified:  user.EmailVerified,
+			PhoneVerified:  user.PhoneVerified,
+			EnableOTP:      user.EnableOTP,
+			OrganizationID: user.OrganizationID,
 		}
 		if user.LastLoginAt != nil {
 			items[i].LastLoginAt = *user.LastLoginAt
 		}
 		items[i].LastLoginIP = user.LastLoginIP
+
+		// 添加组织信息
+		if user.Organization != nil {
+			items[i].Organization = &OrganizationSimpleInfo{
+				ID:   user.Organization.ID,
+				Name: user.Organization.Name,
+				Code: user.Organization.Code,
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -248,19 +258,30 @@ func CreateUserHandler(c *gin.Context) {
 		zap.String("created_by", c.GetString("user_id")),
 	)
 
+	// 创建审计日志
+	utils.CreateAuditLog(c, utils.AuditActionCreate, utils.AuditResourceUser, user.ID,
+		"Created user: "+user.Username, gin.H{
+			"username":        user.Username,
+			"email":           user.Email,
+			"display_name":    user.DisplayName,
+			"organization_id": user.OrganizationID,
+			"status":          user.Status.String(),
+		})
+
 	c.JSON(http.StatusCreated, gin.H{
 		"code":    201,
 		"message": i18n.SuccessCreated,
 		"data": UserInfo{
-			ID:            user.ID,
-			Username:      user.Username,
-			Email:         user.Email,
-			DisplayName:   user.DisplayName,
-			Avatar:        user.Avatar,
-			Status:        user.Status.String(),
-			EmailVerified: user.EmailVerified,
-			PhoneVerified: user.PhoneVerified,
-			EnableOTP:     user.EnableOTP,
+			ID:             user.ID,
+			Username:       user.Username,
+			Email:          user.Email,
+			DisplayName:    user.DisplayName,
+			Avatar:         user.Avatar,
+			Status:         user.Status.String(),
+			EmailVerified:  user.EmailVerified,
+			PhoneVerified:  user.PhoneVerified,
+			EnableOTP:      user.EnableOTP,
+			OrganizationID: user.OrganizationID,
 		},
 	})
 }
@@ -270,7 +291,7 @@ func GetUserHandler(c *gin.Context) {
 	userID := c.Param("id")
 
 	var user models.User
-	if err := database.DB.First(&user, userID).Error; err != nil {
+	if err := database.DB.Preload("Organization").Where("id = ?", userID).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
@@ -289,19 +310,29 @@ func GetUserHandler(c *gin.Context) {
 	}
 
 	userInfo := UserInfo{
-		ID:            user.ID,
-		Username:      user.Username,
-		Email:         user.Email,
-		DisplayName:   user.DisplayName,
-		Avatar:        user.Avatar,
-		Status:        user.Status.String(),
-		EmailVerified: user.EmailVerified,
-		PhoneVerified: user.PhoneVerified,
-		EnableOTP:     user.EnableOTP,
-		LastLoginIP:   user.LastLoginIP,
+		ID:             user.ID,
+		Username:       user.Username,
+		Email:          user.Email,
+		DisplayName:    user.DisplayName,
+		Avatar:         user.Avatar,
+		Status:         user.Status.String(),
+		EmailVerified:  user.EmailVerified,
+		PhoneVerified:  user.PhoneVerified,
+		EnableOTP:      user.EnableOTP,
+		LastLoginIP:    user.LastLoginIP,
+		OrganizationID: user.OrganizationID,
 	}
 	if user.LastLoginAt != nil {
 		userInfo.LastLoginAt = *user.LastLoginAt
+	}
+
+	// 添加组织信息
+	if user.Organization != nil {
+		userInfo.Organization = &OrganizationSimpleInfo{
+			ID:   user.Organization.ID,
+			Name: user.Organization.Name,
+			Code: user.Organization.Code,
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -317,17 +348,21 @@ func UpdateUserHandler(c *gin.Context) {
 
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.ErrorError("Invalid request data for user update",
+			zap.String("user_id", userID),
+			zap.Error(err),
+		)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": i18n.InvalidRequestData,
-			"data":    nil,
+			"data":    gin.H{"error": err.Error()},
 		})
 		return
 	}
 
 	// 检查用户是否存在
 	var user models.User
-	if err := database.DB.First(&user, userID).Error; err != nil {
+	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
@@ -409,7 +444,7 @@ func DeleteUserHandler(c *gin.Context) {
 
 	// 检查用户是否存在
 	var user models.User
-	if err := database.DB.First(&user, userID).Error; err != nil {
+	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,

@@ -75,6 +75,9 @@
               <a-button type="link" size="small" @click.stop="editOrg(record)">
                 Edit
               </a-button>
+              <a-button type="link" size="small" @click.stop="showAddUserToOrgModal(record)">
+                Add User
+              </a-button>
               <a-popconfirm
                 title="Are you sure you want to delete this organization?"
                 @confirm="deleteOrg(record.id)"
@@ -150,11 +153,55 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- Add User to Organization Modal -->
+    <a-modal
+      v-model:open="addUserModalVisible"
+      :title="`Add User to ${selectedOrg?.name}`"
+      width="600px"
+      @ok="handleAddUserToOrgOk"
+      @cancel="handleAddUserToOrgCancel"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="Select User">
+          <a-select
+            v-model:value="selectedUserId"
+            placeholder="Select a user to add to this organization"
+            show-search
+            :filter-option="filterUserOption"
+            style="width: 100%"
+          >
+            <a-select-option
+              v-for="user in availableUsers"
+              :key="user.id"
+              :value="user.id"
+              :label="user.display_name"
+            >
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span>{{ user.display_name }}</span>
+                <span style="color: #999; font-size: 12px;">@{{ user.username }}</span>
+              </div>
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="selectedUserId">
+          <a-card size="small" style="background-color: #f9f9f9;">
+            <template #title>Selected User</template>
+            <div v-if="selectedUser">
+              <p><strong>Name:</strong> {{ selectedUser.display_name }}</p>
+              <p><strong>Username:</strong> {{ selectedUser.username }}</p>
+              <p><strong>Email:</strong> {{ selectedUser.email }}</p>
+              <p><strong>Current Organization:</strong> {{ selectedUser.organization?.name || 'None' }}</p>
+            </div>
+          </a-card>
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import type { Organization, User } from '@/types/api'
@@ -171,6 +218,18 @@ const modalVisible = ref(false)
 const modalTitle = ref('Add Organization')
 const formRef = ref()
 const editingOrg = ref<Organization | null>(null)
+
+// Add user to organization modal
+const addUserModalVisible = ref(false)
+const selectedOrg = ref<Organization | null>(null)
+const selectedUserId = ref<string | undefined>(undefined)
+const availableUsers = ref<User[]>([])
+const allUsers = ref<User[]>([])
+
+// Computed properties
+const selectedUser = computed(() => {
+  return allUsers.value.find(user => user.id === selectedUserId.value)
+})
 
 const formData = reactive({
   name: '',
@@ -217,8 +276,11 @@ const columns = [
   },
   {
     title: 'Manager',
-    dataIndex: 'manager',
-    key: 'manager'
+    dataIndex: 'manager_name',
+    key: 'manager_name',
+    customRender: ({ record }: { record: Organization }) => {
+      return record.manager_name || record.manager || '-'
+    }
   },
   {
     title: 'Location',
@@ -288,6 +350,7 @@ const loadUsers = async () => {
       page_size: 100
     })
     users.value = response.items
+    allUsers.value = response.items
   } catch (error) {
     message.error('Failed to load users')
   }
@@ -314,7 +377,7 @@ const editOrg = (org: Organization) => {
     code: org.code,
     type: org.type,
     parent_id: org.parent_id,
-    manager: org.manager,
+    manager: org.manager_id || org.manager, // 优先使用manager_id，向后兼容
     description: org.description,
     location: org.location,
     phone: org.phone,
@@ -398,6 +461,58 @@ const deleteOrg = async (orgId: string) => {
   } catch (error) {
     message.error('Failed to delete organization')
   }
+}
+
+// Add user to organization methods
+const showAddUserToOrgModal = (org: Organization) => {
+  selectedOrg.value = org
+  selectedUserId.value = undefined
+  // Filter out users who are already in this organization
+  availableUsers.value = allUsers.value.filter(user => 
+    user.organization_id !== org.id
+  )
+  addUserModalVisible.value = true
+}
+
+const handleAddUserToOrgOk = async () => {
+  if (!selectedUserId.value || !selectedOrg.value) {
+    message.error('Please select a user')
+    return
+  }
+
+  try {
+    // Update user's organization
+    await userApi.updateUser(selectedUserId.value, {
+      organization_id: selectedOrg.value.id
+    })
+    
+    message.success(`User added to ${selectedOrg.value.name} successfully`)
+    addUserModalVisible.value = false
+    
+    // Refresh user list to reflect changes
+    await loadUsers()
+  } catch (error) {
+    message.error('Failed to add user to organization')
+  }
+}
+
+const handleAddUserToOrgCancel = () => {
+  addUserModalVisible.value = false
+  selectedOrg.value = null
+  selectedUserId.value = undefined
+  availableUsers.value = []
+}
+
+const filterUserOption = (input: string, option: any) => {
+  const user = allUsers.value.find(u => u.id === option.value)
+  if (!user) return false
+  
+  const searchText = input.toLowerCase()
+  return (
+    user.display_name.toLowerCase().includes(searchText) ||
+    user.username.toLowerCase().includes(searchText) ||
+    user.email.toLowerCase().includes(searchText)
+  )
 }
 
 const getTypeColor = (type: number) => {

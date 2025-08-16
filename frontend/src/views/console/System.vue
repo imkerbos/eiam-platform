@@ -1,8 +1,8 @@
 <template>
   <div class="system-page">
     <div class="page-header">
-      <h2>System Management</h2>
-      <p>Configure system settings, security policies, and administrator access</p>
+      <h2>System Settings</h2>
+      <p>Configure site settings, administrators, and system preferences</p>
     </div>
 
     <!-- System Configuration Tabs -->
@@ -99,7 +99,8 @@
                 class="logo-uploader"
                 :show-upload-list="false"
                 :before-upload="beforeLogoUpload"
-                @change="handleLogoChange"
+                :custom-request="handleLogoUpload"
+                accept="image/*"
               >
                 <div v-if="!siteForm.logo">
                   <PlusOutlined />
@@ -118,224 +119,7 @@
         </div>
       </a-tab-pane>
 
-      <!-- Security Configuration -->
-      <a-tab-pane key="security" tab="Security Configuration">
-        <div class="tab-content">
-          <a-form
-            ref="securityFormRef"
-            :model="securityForm"
-            :rules="securityRules"
-            layout="vertical"
-          >
-            <!-- Password Policy -->
-            <a-card title="Password Policy" :bordered="false" style="margin-bottom: 24px">
-              <a-row :gutter="24">
-                <a-col :span="8">
-                  <a-form-item label="Minimum Length" name="minPasswordLength">
-                    <a-input-number
-                      v-model:value="securityForm.minPasswordLength"
-                      :min="6"
-                      :max="50"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item label="Maximum Length" name="maxPasswordLength">
-                    <a-input-number
-                      v-model:value="securityForm.maxPasswordLength"
-                      :min="8"
-                      :max="128"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item label="Password Expiry (days)" name="passwordExpiryDays">
-                    <a-input-number
-                      v-model:value="securityForm.passwordExpiryDays"
-                      :min="0"
-                      :max="365"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
 
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item label="Password Requirements">
-                    <a-checkbox v-model:checked="securityForm.requireUppercase">
-                      Require uppercase letters
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.requireLowercase">
-                      Require lowercase letters
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.requireNumbers">
-                      Require numbers
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.requireSpecialChars">
-                      Require special characters
-                    </a-checkbox>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="Password History">
-                    <a-input-number
-                      v-model:value="securityForm.passwordHistoryCount"
-                      :min="0"
-                      :max="10"
-                      style="width: 100%"
-                      placeholder="Number of previous passwords to remember"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-card>
-
-            <!-- Session Management -->
-            <a-card title="Session Management" :bordered="false" style="margin-bottom: 24px">
-              <a-row :gutter="24">
-                <a-col :span="8">
-                  <a-form-item label="Session Timeout (minutes)" name="sessionTimeout">
-                    <a-input-number
-                      v-model:value="securityForm.sessionTimeout"
-                      :min="5"
-                      :max="1440"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item label="Max Concurrent Sessions" name="maxConcurrentSessions">
-                    <a-input-number
-                      v-model:value="securityForm.maxConcurrentSessions"
-                      :min="1"
-                      :max="10"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item label="Remember Me Duration (days)" name="rememberMeDays">
-                    <a-input-number
-                      v-model:value="securityForm.rememberMeDays"
-                      :min="1"
-                      :max="30"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-card>
-
-            <!-- 2FA Configuration -->
-            <a-card title="Two-Factor Authentication" :bordered="false" style="margin-bottom: 24px">
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item label="2FA Settings">
-                    <a-checkbox v-model:checked="securityForm.enable2FA">
-                      Enable 2FA for all users
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.require2FAForAdmins">
-                      Require 2FA for administrators
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.allowBackupCodes">
-                      Allow backup codes
-                    </a-checkbox>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="2FA Methods">
-                    <a-checkbox v-model:checked="securityForm.enableTOTP">
-                      TOTP (Time-based One-Time Password)
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.enableSMS">
-                      SMS verification
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.enableEmail">
-                      Email verification
-                    </a-checkbox>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-card>
-
-            <!-- Login Security -->
-            <a-card title="Login Security" :bordered="false">
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item label="Login Attempts">
-                    <a-input-number
-                      v-model:value="securityForm.maxLoginAttempts"
-                      :min="3"
-                      :max="10"
-                      style="width: 100%"
-                      placeholder="Maximum failed login attempts"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="Lockout Duration (minutes)" name="lockoutDuration">
-                    <a-input-number
-                      v-model:value="securityForm.lockoutDuration"
-                      :min="5"
-                      :max="1440"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item label="Security Features">
-                    <a-checkbox v-model:checked="securityForm.enableIPWhitelist">
-                      Enable IP whitelist
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.enableGeolocation">
-                      Enable geolocation tracking
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.enableDeviceFingerprinting">
-                      Enable device fingerprinting
-                    </a-checkbox>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="Security Notifications">
-                    <a-checkbox v-model:checked="securityForm.notifyFailedLogins">
-                      Notify on failed login attempts
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.notifyNewDevices">
-                      Notify on new device login
-                    </a-checkbox>
-                    <br />
-                    <a-checkbox v-model:checked="securityForm.notifyPasswordChanges">
-                      Notify on password changes
-                    </a-checkbox>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-card>
-
-            <a-form-item style="margin-top: 24px">
-              <a-button type="primary" @click="saveSecurityConfig">
-                Save Security Configuration
-              </a-button>
-            </a-form-item>
-          </a-form>
-        </div>
-      </a-tab-pane>
     </a-tabs>
 
     <!-- Administrator Modal -->
@@ -386,11 +170,13 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { systemApi } from '@/api/system'
+import { useSiteStore } from '@/stores/site'
 
 // Data
 const activeTab = ref('admins')
 const loading = ref(false)
 const adminModalVisible = ref(false)
+const siteStore = useSiteStore()
 const editingAdmin = ref(false)
 
 // Mock data
@@ -625,15 +411,35 @@ const beforeLogoUpload = (file: File) => {
   return true
 }
 
-const handleLogoChange = (info: any) => {
-  if (info.file.status === 'done') {
-    try {
-      // TODO: Implement actual file upload to server
-      siteForm.logo = URL.createObjectURL(info.file.originFileObj)
+const handleLogoUpload = async (options: any) => {
+  const { file, onSuccess, onError } = options
+  
+  try {
+    console.log('开始上传logo...', file)
+    
+    const formData = new FormData()
+    formData.append('logo', file)
+    
+    // 使用systemApi上传logo
+    const response = await systemApi.uploadLogo(formData)
+    
+    console.log('Logo上传响应:', response)
+    
+    if (response.logo_url || response.data?.logo_url) {
+      const logoUrl = response.logo_url || response.data.logo_url
+      siteForm.logo = logoUrl
       message.success('Logo uploaded successfully')
-    } catch (error) {
-      message.error('Failed to upload logo')
+      onSuccess && onSuccess(response)
+    } else {
+      const errorMsg = 'Upload successful but no logo URL returned'
+      message.error(errorMsg)
+      onError && onError(new Error(errorMsg))
     }
+  } catch (error: any) {
+    console.error('Logo上传失败:', error)
+    const errorMsg = error.message || 'Failed to upload logo'
+    message.error(errorMsg)
+    onError && onError(error)
   }
 }
 
@@ -645,9 +451,13 @@ const saveSiteConfig = async () => {
       contact_email: siteForm.contactEmail,
       support_email: siteForm.supportEmail,
       description: siteForm.description,
-      logo: siteForm.logo
+      logo_url: siteForm.logo
     }
     await systemApi.updateSystemSettings(settings)
+    
+    // 同步更新站点store
+    siteStore.updateSiteSettings(settings)
+    
     message.success('Site configuration saved successfully')
   } catch (error) {
     message.error('Failed to save site configuration')

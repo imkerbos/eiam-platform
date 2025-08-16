@@ -48,6 +48,46 @@ func main() {
 }
 
 func seed() error {
+	// 禁用外键检查
+	if err := database.DB.Exec("SET FOREIGN_KEY_CHECKS = 0").Error; err != nil {
+		return fmt.Errorf("failed to disable foreign key checks: %v", err)
+	}
+	defer func() {
+		// 重新启用外键检查
+		if err := database.DB.Exec("SET FOREIGN_KEY_CHECKS = 1").Error; err != nil {
+			logger.Error("Failed to enable foreign key checks", zap.Error(err))
+		}
+	}()
+
+	// 先创建测试组织（不依赖用户）
+	var org models.Organization
+	if err := database.DB.Where("code = ?", "TEST_ORG").First(&org).Error; err == nil {
+		logger.Info("Test organization already exists, using existing organization", zap.String("org_id", org.ID))
+	} else if err != gorm.ErrRecordNotFound {
+		return fmt.Errorf("failed to check existing organization: %v", err)
+	} else {
+		// 创建测试组织（暂时不设置manager）
+		org = models.Organization{
+			BaseModel: models.BaseModel{
+				ID: "org-001",
+			},
+			Name:        "测试组织",
+			Code:        "TEST_ORG",
+			Type:        models.OrgTypeHeadquarters,
+			Level:       1,
+			Path:        "/1",
+			Sort:        1,
+			Description: "测试用的根组织",
+			Status:      models.StatusActive,
+		}
+
+		if err := database.DB.Create(&org).Error; err != nil {
+			return fmt.Errorf("failed to create organization: %v", err)
+		}
+
+		logger.Info("Created test organization", zap.String("org_id", org.ID))
+	}
+
 	// 检查用户是否已存在
 	var user models.User
 	if err := database.DB.Where("username = ?", "admin").First(&user).Error; err == nil {
@@ -79,6 +119,7 @@ func seed() error {
 			EmailVerified: true,
 			PhoneVerified: false,
 			EnableOTP:     false,
+			OrganizationID: org.ID, // 设置组织ID
 		}
 
 		if err := database.DB.Create(&user).Error; err != nil {
@@ -88,39 +129,12 @@ func seed() error {
 		logger.Info("Created test user", zap.String("user_id", user.ID), zap.String("username", user.Username))
 	}
 
-	// 检查组织是否已存在
-	var org models.Organization
-	if err := database.DB.Where("code = ?", "TEST_ORG").First(&org).Error; err == nil {
-		logger.Info("Test organization already exists, using existing organization", zap.String("org_id", org.ID))
-	} else if err != gorm.ErrRecordNotFound {
-		return fmt.Errorf("failed to check existing organization: %v", err)
-	} else {
-		// 创建测试组织
-		org = models.Organization{
-			BaseModel: models.BaseModel{
-				ID: "org-001",
-			},
-			Name:        "测试组织",
-			Code:        "TEST_ORG",
-			Type:        models.OrgTypeHeadquarters,
-			Level:       1,
-			Path:        "/1",
-			Sort:        1,
-			Description: "测试用的根组织",
-			Manager:     user.ID,
-			Status:      models.StatusActive,
+	// 更新组织的manager字段
+	if org.Manager == "" {
+		if err := database.DB.Model(&org).Update("manager", user.ID).Error; err != nil {
+			return fmt.Errorf("failed to update organization manager: %v", err)
 		}
-
-		if err := database.DB.Create(&org).Error; err != nil {
-			return fmt.Errorf("failed to create organization: %v", err)
-		}
-
-		logger.Info("Created test organization", zap.String("org_id", org.ID))
-
-		// 更新用户的组织ID
-		if err := database.DB.Model(&user).Update("organization_id", org.ID).Error; err != nil {
-			return fmt.Errorf("failed to update user organization: %v", err)
-		}
+		logger.Info("Updated organization manager", zap.String("org_id", org.ID), zap.String("manager_id", user.ID))
 	}
 
 	// 检查角色是否已存在

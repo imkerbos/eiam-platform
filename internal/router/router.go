@@ -44,6 +44,12 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 	// 健康检查端点
 	r.GET("/health", healthCheckHandler)
 
+	// 静态文件服务 - 头像上传
+	r.Static("/uploads", "./uploads")
+
+	// 公开API端点（不需要认证）
+	r.GET("/public/site-info", handlers.GetPublicSiteInfoHandler)
+
 	// API路由组
 	api := r.Group("/api")
 	{

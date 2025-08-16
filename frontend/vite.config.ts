@@ -17,7 +17,15 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      '/public': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
       '/health': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/uploads': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },

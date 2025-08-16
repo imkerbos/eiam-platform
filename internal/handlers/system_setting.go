@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -448,18 +449,23 @@ func GetDashboardData(c *gin.Context) {
 
 	// Get recent login activities
 	var loginLogs []models.UserLoginLog
-	if err := database.DB.Order("created_at DESC").Limit(10).Find(&loginLogs).Error; err != nil {
+	if err := database.DB.Preload("User").Order("created_at DESC").Limit(10).Find(&loginLogs).Error; err != nil {
 		logger.ErrorError("Failed to get login logs", zap.Error(err))
 	}
 
 	for _, log := range loginLogs {
+		userName := log.UserID
+		if log.User.Username != "" {
+			userName = log.User.Username
+		}
+
 		activity := RecentActivity{
 			ID:          log.ID,
 			Title:       "User Login",
-			Description: log.UserID + " logged in",
+			Description: userName + " logged in",
 			Icon:        "user",
 			Time:        timeAgo(log.CreatedAt),
-			User:        log.UserID,
+			User:        userName,
 			Action:      "login",
 			Resource:    "system",
 			Status:      boolToString(log.Success),
@@ -467,6 +473,45 @@ func GetDashboardData(c *gin.Context) {
 			CreatedAt:   log.CreatedAt,
 		}
 		activities = append(activities, activity)
+	}
+
+	// Get recent audit activities (skip if table doesn't exist)
+	var auditLogs []models.AuditLog
+	if err := database.DB.Preload("User").Order("created_at DESC").Limit(5).Find(&auditLogs).Error; err != nil {
+		// 如果audit_logs表不存在，忽略错误继续执行
+		logger.AccessInfo("Audit logs table not available, skipping audit activities", zap.Error(err))
+	} else {
+		for _, log := range auditLogs {
+			userName := log.UserID
+			if log.User.Username != "" {
+				userName = log.User.Username
+			}
+
+			activity := RecentActivity{
+				ID:          log.ID,
+				Title:       log.Action + " " + log.Resource,
+				Description: userName + " " + log.Description,
+				Icon:        "audit",
+				Time:        timeAgo(log.CreatedAt),
+				User:        userName,
+				Action:      log.Action,
+				Resource:    log.Resource,
+				Status:      log.Status,
+				IPAddress:   log.IPAddress,
+				CreatedAt:   log.CreatedAt,
+			}
+			activities = append(activities, activity)
+		}
+	}
+
+	// Sort activities by creation time (newest first)
+	sort.Slice(activities, func(i, j int) bool {
+		return activities[i].CreatedAt.After(activities[j].CreatedAt)
+	})
+
+	// Limit to 10 most recent activities
+	if len(activities) > 10 {
+		activities = activities[:10]
 	}
 
 	// System status
@@ -603,4 +648,44 @@ func timeAgo(t time.Time) string {
 		}
 		return string(rune(days)) + " days ago"
 	}
+}
+
+// GetPublicSiteInfoHandler 获取公开站点信息（不需要认证）
+func GetPublicSiteInfoHandler(c *gin.Context) {
+	var siteNameSetting, logoSetting models.SystemSetting
+
+		// 获取站点名称
+	if err := database.DB.Where("category = ? AND key = ?", "site", "site_name").First(&siteNameSetting).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.ErrorError("Failed to get site name setting", zap.Error(err))
+		}
+	}
+	
+	// 获取logo URL
+	if err := database.DB.Where("category = ? AND key = ?", "site", "logo_url").First(&logoSetting).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.ErrorError("Failed to get logo setting", zap.Error(err))
+		}
+	}
+
+	// 设置默认值
+	siteName := "EIAM"
+	logoUrl := "/logo.svg"
+
+	if siteNameSetting.Value != "" {
+		siteName = siteNameSetting.Value
+	}
+
+	if logoSetting.Value != "" {
+		logoUrl = logoSetting.Value
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data": gin.H{
+			"site_name": siteName,
+			"logo_url":  logoUrl,
+		},
+	})
 }

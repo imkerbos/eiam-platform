@@ -18,7 +18,7 @@ const (
 	SuccessOTPDisabled     = "OTP disabled successfully"
 
 	// Error messages
-	InvalidCredentials       = "Invalid username or password"
+	InvalidCredentials       = "Invalid username or password. Please check your credentials."
 	InvalidToken             = "Invalid access token"
 	TokenExpired             = "Token expired"
 	Unauthorized             = "Unauthorized"
@@ -37,8 +37,8 @@ const (
 	WeakPassword             = "Password is too weak"
 	OldPassword              = "Old password is incorrect"
 	InvalidRequestData       = "Invalid request data"
-	UserInactive             = "User account is inactive"
-	AccountLocked            = "Account is locked"
+	UserInactive             = "Your account has been deactivated. Please contact administrator."
+	AccountLocked            = "Account is locked due to multiple failed login attempts. Please contact administrator or try again later."
 	OTPRequired              = "OTP verification required"
 
 	// Status messages

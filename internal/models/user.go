@@ -138,3 +138,26 @@ type UserOTPRecord struct {
 func (UserOTPRecord) TableName() string {
 	return "user_otp_records"
 }
+
+// AuditLog audit log model
+type AuditLog struct {
+	BaseModel
+	UserID      string `json:"user_id" gorm:"type:varchar(36);index"`           // 操作用户ID
+	Action      string `json:"action" gorm:"type:varchar(100);not null;index"`  // 操作类型: create, update, delete, login, logout, etc.
+	Resource    string `json:"resource" gorm:"type:varchar(100);not null;index"` // 资源类型: user, organization, role, permission, etc.
+	ResourceID  string `json:"resource_id" gorm:"type:varchar(36);index"`       // 资源ID
+	Description string `json:"description" gorm:"type:varchar(500)"`            // 操作描述
+	Details     string `json:"details" gorm:"type:text"`                        // 详细信息 (JSON格式)
+	IPAddress   string `json:"ip_address" gorm:"type:varchar(45)"`              // IP地址
+	UserAgent   string `json:"user_agent" gorm:"type:varchar(500)"`             // 用户代理
+	Status      string `json:"status" gorm:"type:varchar(20);default:'success'"` // 操作状态: success, failed
+	ErrorMsg    string `json:"error_msg" gorm:"type:varchar(500)"`              // 错误信息
+
+	// Relationships
+	User User `json:"user" gorm:"foreignKey:UserID"`
+}
+
+// TableName specify table name
+func (AuditLog) TableName() string {
+	return "audit_logs"
+}

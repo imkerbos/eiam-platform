@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { TokenManager } from '@/utils/storage'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -58,6 +59,12 @@ const routes: RouteRecordRaw[] = [
               component: () => import('@/views/console/Audit.vue'),
               meta: { title: 'Audit & Monitoring' }
             },
+            {
+              path: 'security',
+              name: 'Security',
+              component: () => import('@/views/console/Security.vue'),
+              meta: { title: 'Security Settings' }
+            },
       {
         path: 'roles',
         name: 'Roles',
@@ -114,13 +121,23 @@ router.beforeEach((to, from, next) => {
   // Set page title
   document.title = to.meta.title ? `${to.meta.title} - EIAM Platform` : 'EIAM Platform'
   
-  // Check authentication
-  const token = localStorage.getItem('access_token')
+  // Check authentication - 使用新的安全存储
+  const token = TokenManager.getAccessToken()
+  console.log('路由守卫检查:', {
+    to: to.path,
+    from: from.path,
+    hasToken: !!token,
+    requiresAuth: to.meta.requiresAuth
+  })
+  
   if (to.meta.requiresAuth && !token) {
+    console.log('需要认证但无token，跳转到登录页')
     next('/login')
   } else if (to.path === '/login' && token) {
+    console.log('已登录用户访问登录页，跳转到控制台')
     next('/console')
   } else {
+    console.log('路由检查通过，继续导航')
     next()
   }
 })

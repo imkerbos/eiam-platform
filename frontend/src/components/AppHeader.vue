@@ -3,11 +3,11 @@
     <div class="header-container">
       <!-- Logo and Title -->
       <div class="header-left">
-        <div class="logo">
+        <div class="logo" @click="goToHome" style="cursor: pointer;">
           <div class="logo-img">
-            <img src="/logo.svg" alt="EIAM" class="logo-svg" />
+            <img :src="siteStore.logoUrl" :alt="siteStore.siteName" class="logo-svg" />
           </div>
-          <h1 class="platform-title">EIAM</h1>
+          <h1 class="platform-title">{{ siteStore.siteName }}</h1>
         </div>
       </div>
 
@@ -50,13 +50,11 @@
         <div class="user-section">
           <a-dropdown :trigger="['hover', 'click']" placement="bottomRight">
             <div class="user-avatar-wrapper">
-              <a-avatar 
-                :src="userStore.user?.avatar" 
-                :alt="userStore.user?.display_name"
+              <UserAvatar 
+                :user="userStore.user"
+                :size="32"
                 class="user-avatar"
-              >
-                {{ userStore.user?.display_name?.charAt(0)?.toUpperCase() }}
-              </a-avatar>
+              />
               <span class="username">{{ userStore.user?.display_name || 'admin' }}</span>
               <DownOutlined class="dropdown-arrow" />
             </div>
@@ -98,10 +96,13 @@ import {
   ReloadOutlined
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { useSiteStore } from '@/stores/site'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+const siteStore = useSiteStore()
 
 // Current tab based on route
 const currentTab = computed(() => {
@@ -112,6 +113,15 @@ const currentTab = computed(() => {
 })
 
 // Methods
+const goToHome = () => {
+  // 根据当前标签跳转到对应的首页
+  if (currentTab.value === 'console') {
+    router.push('/console')
+  } else {
+    router.push('/portal/applications')
+  }
+}
+
 const switchTab = (tab: string) => {
   if (tab === 'portal') {
     router.push('/portal/applications')
@@ -289,9 +299,7 @@ const refresh = () => {
 }
 
 .user-avatar {
-  width: 32px;
-  height: 32px;
-  border: 2px solid #f0f0f0;
+  /* UserAvatar组件自己处理大小，这里不需要重复设置 */
 }
 
 .username {

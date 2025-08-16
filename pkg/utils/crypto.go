@@ -8,26 +8,64 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"strings"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
-// HashPassword hash password using MD5
+// HashPassword hash password using bcrypt (recommended) or MD5 (legacy)
 func HashPassword(password string, cost int) (string, error) {
-	// 使用MD5加密，cost参数在这里不使用
-	hash := md5.Sum([]byte(password))
-	return fmt.Sprintf("%x", hash), nil
-}
-
-// CheckPassword verify password
-func CheckPassword(password, hash string) bool {
-	// 如果传入的密码已经是MD5格式，直接比较
-	if len(password) == 32 {
-		return password == hash
+	// 默认使用bcrypt加密
+	if cost == 0 {
+		cost = bcrypt.DefaultCost
 	}
 
-	// 否则计算密码的MD5值
-	passwordHash := md5.Sum([]byte(password))
-	passwordHashStr := fmt.Sprintf("%x", passwordHash)
-	return passwordHashStr == hash
+	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(password), cost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashedBytes), nil
+}
+
+// HashPasswordMD5 hash password using MD5 (legacy support)
+func HashPasswordMD5(password string) string {
+	hash := md5.Sum([]byte(password))
+	return fmt.Sprintf("%x", hash)
+}
+
+// CheckPassword verify password (supports both bcrypt and MD5)
+func CheckPassword(password, hash string) bool {
+	// 检查是否是bcrypt哈希（以$2a$, $2b$, $2x$, $2y$开头）
+	if strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$") ||
+		strings.HasPrefix(hash, "$2x$") || strings.HasPrefix(hash, "$2y$") {
+		err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+		return err == nil
+	}
+
+	// 兼容旧的MD5哈希
+	if len(hash) == 32 {
+		// 如果传入的密码已经是MD5格式，直接比较
+		if len(password) == 32 {
+			return password == hash
+		}
+		// 否则计算密码的MD5值
+		passwordHash := md5.Sum([]byte(password))
+		passwordHashStr := fmt.Sprintf("%x", passwordHash)
+		return passwordHashStr == hash
+	}
+
+	return false
+}
+
+// ShouldUpgradePassword 检查密码是否需要升级到bcrypt
+func ShouldUpgradePassword(hash string) bool {
+	// 如果是MD5哈希（32位十六进制），建议升级
+	return len(hash) == 32 && !strings.HasPrefix(hash, "$2")
+}
+
+// UpgradePasswordHash 将密码哈希升级到bcrypt
+func UpgradePasswordHash(plainPassword string) (string, error) {
+	return HashPassword(plainPassword, bcrypt.DefaultCost)
 }
 
 // GenerateSalt generate random salt

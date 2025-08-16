@@ -15,7 +15,7 @@
           v-model:selectedKeys="selectedKeys"
           v-model:openKeys="openKeys"
           mode="inline"
-          theme="dark"
+          theme="light"
           @click="handleMenuClick"
         >
           <a-menu-item key="dashboard">
@@ -50,14 +50,20 @@
             <a-menu-item key="application-groups">Application Groups</a-menu-item>
           </a-sub-menu>
           
-          <a-sub-menu key="system">
-            <template #title>
-              <SettingOutlined />
-              <span>System</span>
-            </template>
-            <a-menu-item key="system">System Management</a-menu-item>
-            <a-menu-item key="audit">Audit & Monitoring</a-menu-item>
-          </a-sub-menu>
+          <a-menu-item key="audit">
+            <AuditOutlined />
+            <span>Audit & Monitoring</span>
+          </a-menu-item>
+
+          <a-menu-item key="security">
+            <SecurityScanOutlined />
+            <span>Security Settings</span>
+          </a-menu-item>
+          
+          <a-menu-item key="system">
+            <SettingOutlined />
+            <span>System Settings</span>
+          </a-menu-item>
         </a-menu>
       </a-layout-sider>
 
@@ -80,7 +86,9 @@ import {
   UserOutlined,
   SafetyOutlined,
   AppstoreOutlined,
-  SettingOutlined
+  SettingOutlined,
+  AuditOutlined,
+  SecurityScanOutlined
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
 import AppHeader from '@/components/AppHeader.vue'
@@ -104,13 +112,12 @@ watch(
     // Set open keys for sub-menus
     if (path.includes('/users') || path.includes('/organizations')) {
       openKeys.value = ['user-management']
-    } else if (path.includes('/permissions')) {
+    } else if (path.includes('/permissions') || path.includes('/roles')) {
       openKeys.value = ['access-control']
     } else if (path.includes('/applications')) {
       openKeys.value = ['applications']
-    } else if (path.includes('/system') || path.includes('/audit')) {
-      openKeys.value = ['system']
     }
+    // audit, security, system现在是独立菜单项，不需要openKeys
   },
   { immediate: true }
 )
@@ -147,7 +154,8 @@ const handleLogout = () => {
 }
 
 .sidebar {
-  background: #001529;
+  background: #fff;
+  border-right: 1px solid #f0f0f0;
 }
 
 .content {

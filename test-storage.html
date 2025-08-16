@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>存储功能测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .warning {
+            color: #ffc107;
+        }
+        .result {
+            background: #fff;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔒 EIAM平台 - 存储安全测试</h1>
+    
+    <div class="test-section">
+        <h2>测试说明</h2>
+        <p>这个页面用于测试新的安全存储功能。测试包括：</p>
+        <ul>
+            <li>Token的加密存储和读取</li>
+            <li>用户信息的安全存储</li>
+            <li>数据迁移功能</li>
+            <li>存储数据的清理</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>手动测试</h2>
+        <button onclick="testBasicStorage()">测试基础存储功能</button>
+        <button onclick="testEncryption()">测试加密功能</button>
+        <button onclick="testMigration()">测试迁移功能</button>
+        <button onclick="clearAllData()">清除所有数据</button>
+        <button onclick="checkCurrentStorage()">检查当前存储状态</button>
+    </div>
+
+    <div id="test-results" class="result"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const results = document.getElementById('test-results');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'success' ? 'success' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : '';
+            results.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function clearResults() {
+            document.getElementById('test-results').innerHTML = '';
+        }
+
+        // 模拟加密函数（简化版）
+        function simpleEncrypt(text) {
+            return btoa(text + 'encrypted-key');
+        }
+
+        function simpleDecrypt(encrypted) {
+            try {
+                return atob(encrypted).replace('encrypted-key', '');
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function testBasicStorage() {
+            clearResults();
+            log('🧪 开始测试基础存储功能...', 'info');
+
+            try {
+                // 测试sessionStorage存储
+                const testToken = 'test-access-token-' + Date.now();
+                const encryptedToken = simpleEncrypt(testToken);
+                
+                sessionStorage.setItem('test_access_token', encryptedToken);
+                log('✅ Token已存储到sessionStorage', 'success');
+
+                // 测试读取
+                const storedToken = sessionStorage.getItem('test_access_token');
+                const decryptedToken = simpleDecrypt(storedToken);
+                
+                if (decryptedToken === testToken) {
+                    log('✅ Token读取成功，数据一致', 'success');
+                } else {
+                    log('❌ Token读取失败，数据不一致', 'error');
+                }
+
+                // 测试localStorage存储
+                const testRefreshToken = 'test-refresh-token-' + Date.now();
+                const encryptedRefreshToken = simpleEncrypt(testRefreshToken);
+                
+                localStorage.setItem('test_refresh_token', encryptedRefreshToken);
+                log('✅ Refresh Token已存储到localStorage', 'success');
+
+                // 测试用户信息存储
+                const testUser = {
+                    id: 'user-' + Date.now(),
+                    username: 'testuser',
+                    email: 'test@example.com'
+                };
+
+                sessionStorage.setItem('test_user_info', JSON.stringify(testUser));
+                const storedUser = JSON.parse(sessionStorage.getItem('test_user_info'));
+                
+                if (JSON.stringify(storedUser) === JSON.stringify(testUser)) {
+                    log('✅ 用户信息存储和读取成功', 'success');
+                } else {
+                    log('❌ 用户信息存储失败', 'error');
+                }
+
+                log('🎉 基础存储功能测试完成！', 'success');
+
+            } catch (error) {
+                log('❌ 基础存储测试失败: ' + error.message, 'error');
+            }
+        }
+
+        function testEncryption() {
+            clearResults();
+            log('🧪 开始测试加密功能...', 'info');
+
+            try {
+                const originalData = 'sensitive-data-12345';
+                const encryptedData = simpleEncrypt(originalData);
+                const decryptedData = simpleDecrypt(encryptedData);
+
+                log('原始数据: ' + originalData, 'info');
+                log('加密数据: ' + encryptedData, 'info');
+                log('解密数据: ' + decryptedData, 'info');
+
+                if (originalData === decryptedData) {
+                    log('✅ 加密/解密功能正常', 'success');
+                } else {
+                    log('❌ 加密/解密功能异常', 'error');
+                }
+
+                // 验证加密数据与原始数据不同
+                if (originalData !== encryptedData) {
+                    log('✅ 数据已被正确加密', 'success');
+                } else {
+                    log('⚠️ 数据可能未被加密', 'warning');
+                }
+
+                log('🎉 加密功能测试完成！', 'success');
+
+            } catch (error) {
+                log('❌ 加密测试失败: ' + error.message, 'error');
+            }
+        }
+
+        function testMigration() {
+            clearResults();
+            log('🧪 开始测试迁移功能...', 'info');
+
+            try {
+                // 模拟旧的localStorage数据
+                localStorage.setItem('access_token', 'old-access-token-123');
+                localStorage.setItem('refresh_token', 'old-refresh-token-456');
+                log('✅ 模拟旧数据已创建', 'success');
+
+                // 模拟迁移过程
+                const oldAccessToken = localStorage.getItem('access_token');
+                const oldRefreshToken = localStorage.getItem('refresh_token');
+
+                if (oldAccessToken && oldRefreshToken) {
+                    log('✅ 检测到需要迁移的旧数据', 'success');
+
+                    // 迁移到新存储（加密）
+                    const newAccessToken = simpleEncrypt(oldAccessToken);
+                    const newRefreshToken = simpleEncrypt(oldRefreshToken);
+
+                    sessionStorage.setItem('migrated_access_token', newAccessToken);
+                    localStorage.setItem('migrated_refresh_token', newRefreshToken);
+
+                    // 清理旧数据
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+
+                    log('✅ 数据迁移完成', 'success');
+
+                    // 验证迁移结果
+                    const migratedAccess = simpleDecrypt(sessionStorage.getItem('migrated_access_token'));
+                    const migratedRefresh = simpleDecrypt(localStorage.getItem('migrated_refresh_token'));
+
+                    if (migratedAccess === oldAccessToken && migratedRefresh === oldRefreshToken) {
+                        log('✅ 迁移数据验证成功', 'success');
+                    } else {
+                        log('❌ 迁移数据验证失败', 'error');
+                    }
+
+                    // 检查旧数据是否被清理
+                    if (!localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) {
+                        log('✅ 旧数据清理成功', 'success');
+                    } else {
+                        log('⚠️ 旧数据未完全清理', 'warning');
+                    }
+                }
+
+                log('🎉 迁移功能测试完成！', 'success');
+
+            } catch (error) {
+                log('❌ 迁移测试失败: ' + error.message, 'error');
+            }
+        }
+
+        function clearAllData() {
+            clearResults();
+            log('🧹 开始清理所有测试数据...', 'info');
+
+            try {
+                // 清理sessionStorage
+                const sessionKeys = ['test_access_token', 'test_user_info', 'migrated_access_token'];
+                sessionKeys.forEach(key => {
+                    sessionStorage.removeItem(key);
+                });
+
+                // 清理localStorage
+                const localKeys = ['test_refresh_token', 'migrated_refresh_token', 'access_token', 'refresh_token'];
+                localKeys.forEach(key => {
+                    localStorage.removeItem(key);
+                });
+
+                log('✅ 所有测试数据已清理', 'success');
+
+            } catch (error) {
+                log('❌ 数据清理失败: ' + error.message, 'error');
+            }
+        }
+
+        function checkCurrentStorage() {
+            clearResults();
+            log('🔍 检查当前存储状态...', 'info');
+
+            try {
+                log('=== SessionStorage 内容 ===', 'info');
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const key = sessionStorage.key(i);
+                    const value = sessionStorage.getItem(key);
+                    log(`${key}: ${value.substring(0, 50)}${value.length > 50 ? '...' : ''}`, 'info');
+                }
+
+                log('=== LocalStorage 内容 ===', 'info');
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    const value = localStorage.getItem(key);
+                    log(`${key}: ${value.substring(0, 50)}${value.length > 50 ? '...' : ''}`, 'info');
+                }
+
+                log('🎉 存储状态检查完成！', 'success');
+
+            } catch (error) {
+                log('❌ 存储状态检查失败: ' + error.message, 'error');
+            }
+        }
+
+        // 页面加载时的初始化
+        window.onload = function() {
+            log('📋 存储安全测试页面已加载', 'success');
+            log('💡 请点击上方按钮开始测试', 'info');
+        };
+    </script>
+</body>
+</html>

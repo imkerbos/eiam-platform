@@ -51,7 +51,9 @@ export interface Organization {
   path: string
   sort: number
   description?: string
-  manager?: string
+  manager?: string        // 向后兼容，显示名称
+  manager_id?: string     // 新增：manager的用户ID
+  manager_name?: string   // 新增：manager的显示名称
   location?: string
   phone?: string
   email?: string

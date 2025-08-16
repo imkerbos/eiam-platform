@@ -545,7 +545,11 @@ const pagination = reactive({
   pageSize: 10,
   total: 0,
   showSizeChanger: true,
-  showQuickJumper: true
+  showQuickJumper: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
+  showTotal: (total: number, range: [number, number]) => {
+    return `显示 ${range[0]}-${range[1]} 条，共 ${total} 条`
+  }
 })
 
 // Methods

@@ -46,18 +46,25 @@ func main() {
 }
 
 func migrate() error {
-	// Core table migration
+	// Disable foreign key checks temporarily
+	if err := database.DB.Exec("SET FOREIGN_KEY_CHECKS = 0").Error; err != nil {
+		return fmt.Errorf("failed to disable foreign key checks: %v", err)
+	}
+
+	// Core table migration in correct order
 	coreTables := []interface{}{
 		&models.User{},
 		&models.UserProfile{},
 		&models.UserSession{},
 		&models.UserLoginLog{},
 		&models.UserOTPRecord{},
+		&models.AuditLog{},
 		&models.Organization{},
 		&models.Role{},
 		&models.Permission{},
 		&models.ApplicationGroup{},
 		&models.Application{},
+		&models.SystemSetting{},
 	}
 
 	// Phase 2 tables (commented for now)
@@ -73,6 +80,11 @@ func migrate() error {
 		if err := database.DB.AutoMigrate(table); err != nil {
 			return fmt.Errorf("table migration failed: %v", err)
 		}
+	}
+
+	// Re-enable foreign key checks
+	if err := database.DB.Exec("SET FOREIGN_KEY_CHECKS = 1").Error; err != nil {
+		return fmt.Errorf("failed to enable foreign key checks: %v", err)
 	}
 
 	logger.ServiceInfo("Core table migration completed")

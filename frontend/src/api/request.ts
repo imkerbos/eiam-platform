@@ -1,6 +1,8 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import { message } from 'ant-design-vue'
 import type { ApiResponse } from '@/types/api'
+import router from '@/router'
+import { TokenManager } from '@/utils/storage'
 
 // Create axios instance
 const request: AxiosInstance = axios.create({
@@ -18,8 +20,8 @@ request.interceptors.request.use(
     const tradeId = `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     config.headers['X-Trade-ID'] = tradeId
 
-    // Add authorization token
-    const token = localStorage.getItem('access_token')
+    // Add authorization token - 使用安全存储获取token
+    const token = TokenManager.getAccessToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -31,7 +33,23 @@ request.interceptors.request.use(
   }
 )
 
-// Response interceptor
+// Track if we're currently refreshing token to avoid multiple simultaneous refresh attempts
+let isRefreshing = false
+let failedQueue: Array<{ resolve: (value?: any) => void; reject: (reason?: any) => void }> = []
+
+const processQueue = (error: any, token?: string) => {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) {
+      reject(error)
+    } else {
+      resolve(token)
+    }
+  })
+  
+  failedQueue = []
+}
+
+// Response interceptor with automatic token refresh
 request.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
     const { data } = response
@@ -41,35 +59,112 @@ request.interceptors.response.use(
       return data.data || data
     }
     
-    // Handle business error - don't show message here, let the component handle it
-    const errorMessage = data.message || 'Request failed'
-    return Promise.reject(new Error(errorMessage))
+    // Handle business error - preserve error details for component handling
+    const error = new Error(data.message || 'Request failed')
+    // Attach additional error information
+    ;(error as any).code = data.code
+    ;(error as any).data = data.data
+    return Promise.reject(error)
   },
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config
+    
     // Handle HTTP error
     if (error.response) {
       const { status, data } = error.response
       
+      if (status === 401 && !originalRequest._retry) {
+        if (isRefreshing) {
+          // If we're already refreshing, queue this request
+          return new Promise((resolve, reject) => {
+            failedQueue.push({ resolve, reject })
+          }).then(() => {
+            // Retry the original request with the new token - 使用安全存储获取token
+            const token = TokenManager.getAccessToken()
+            if (token) {
+              originalRequest.headers.Authorization = `Bearer ${token}`
+            }
+            return request(originalRequest)
+          }).catch(err => {
+            return Promise.reject(err)
+          })
+        }
+
+        originalRequest._retry = true
+        isRefreshing = true
+
+        const refreshToken = TokenManager.getRefreshToken()
+        
+        if (refreshToken) {
+          try {
+            // Attempt to refresh the token
+            const response = await axios.post('/api/v1/console/auth/refresh', {
+              refresh_token: refreshToken
+            })
+            
+            const { access_token, refresh_token: newRefreshToken } = response.data.data
+            
+            // Update stored tokens - 使用安全存储
+            TokenManager.setTokens(access_token, newRefreshToken)
+            
+            // Update request header
+            originalRequest.headers.Authorization = `Bearer ${access_token}`
+            
+            // Process queued requests
+            processQueue(null, access_token)
+            
+            isRefreshing = false
+            
+            // Retry the original request
+            return request(originalRequest)
+            
+          } catch (refreshError) {
+            // Refresh failed, clear tokens and redirect to login
+            processQueue(refreshError, undefined)
+            isRefreshing = false
+            
+            // 使用安全存储清除token
+            TokenManager.clearTokens()
+            
+            // Only redirect if not already on login page
+            if (router.currentRoute.value.path !== '/login') {
+              message.error('登录已过期，请重新登录')
+              router.push('/login')
+            }
+            
+            return Promise.reject(refreshError)
+          }
+        } else {
+          // No refresh token, redirect to login
+          isRefreshing = false
+          
+          if (router.currentRoute.value.path !== '/login') {
+            message.error('请先登录')
+            router.push('/login')
+          }
+          
+          return Promise.reject(error)
+        }
+      }
+      
+      // Handle other HTTP status codes
       switch (status) {
-        case 401:
-          // Don't show message here, let the login component handle it
-          break
         case 403:
-          message.error('Forbidden, insufficient permissions')
+          message.error('权限不足，无法访问此资源')
           break
         case 404:
-          message.error('Resource not found')
+          message.error('请求的资源不存在')
           break
         case 500:
-          message.error('Internal server error')
+          message.error('服务器内部错误，请稍后重试')
           break
         default:
-          message.error(data?.message || 'Request failed')
+          message.error(data?.message || '请求失败')
       }
     } else if (error.request) {
-      message.error('Network error, please check your connection')
+      message.error('网络错误，请检查网络连接')
     } else {
-      message.error('Request configuration error')
+      message.error('请求配置错误')
     }
     
     return Promise.reject(error)

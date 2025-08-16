@@ -25,27 +25,36 @@ type LoginRequest struct {
 
 // LoginResponse 登录响应
 type LoginResponse struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int64     `json:"expires_in"`
-	User         UserInfo  `json:"user"`
-	RequireOTP   bool      `json:"require_otp"`
+	AccessToken  string   `json:"access_token"`
+	RefreshToken string   `json:"refresh_token"`
+	TokenType    string   `json:"token_type"`
+	ExpiresIn    int64    `json:"expires_in"`
+	User         UserInfo `json:"user"`
+	RequireOTP   bool     `json:"require_otp"`
 }
 
 // UserInfo 用户信息
 type UserInfo struct {
-	ID            string    `json:"id"`
-	Username      string    `json:"username"`
-	Email         string    `json:"email"`
-	DisplayName   string    `json:"display_name"`
-	Avatar        string    `json:"avatar"`
-	Status        string    `json:"status"`
-	EmailVerified bool      `json:"email_verified"`
-	PhoneVerified bool      `json:"phone_verified"`
-	EnableOTP     bool      `json:"enable_otp"`
-	LastLoginAt   time.Time `json:"last_login_at"`
-	LastLoginIP   string    `json:"last_login_ip"`
+	ID             string                  `json:"id"`
+	Username       string                  `json:"username"`
+	Email          string                  `json:"email"`
+	DisplayName    string                  `json:"display_name"`
+	Avatar         string                  `json:"avatar"`
+	Status         string                  `json:"status"`
+	EmailVerified  bool                    `json:"email_verified"`
+	PhoneVerified  bool                    `json:"phone_verified"`
+	EnableOTP      bool                    `json:"enable_otp"`
+	LastLoginAt    time.Time               `json:"last_login_at"`
+	LastLoginIP    string                  `json:"last_login_ip"`
+	OrganizationID string                  `json:"organization_id"`
+	Organization   *OrganizationSimpleInfo `json:"organization,omitempty"`
+}
+
+// OrganizationSimpleInfo 组织简要信息
+type OrganizationSimpleInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
 }
 
 // RefreshTokenRequest 刷新令牌请求
@@ -121,8 +130,18 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// 验证密码（前端已经MD5加密）
-	if !utils.CheckPassword(req.Password, user.Password) {
+	// 验证密码（前端已经AES加密，需要先解密）
+	decryptedPassword := req.Password
+
+	// 如果密码长度表明是加密的，尝试解密
+	if len(req.Password) > 32 {
+		if decrypted, err := utils.DecryptPassword(req.Password); err == nil {
+			decryptedPassword = decrypted
+		}
+		// 如果解密失败，保持原密码（可能是明文或MD5）
+	}
+
+	if !utils.CheckPassword(decryptedPassword, user.Password) {
 		// 更新失败登录次数
 		user.FailedCount++
 		if user.FailedCount >= 5 {
@@ -143,6 +162,15 @@ func LoginHandler(c *gin.Context) {
 			"data":    nil,
 		})
 		return
+	}
+
+	// 检查是否需要升级密码哈希
+	if utils.ShouldUpgradePassword(user.Password) {
+		// 在后台升级密码哈希
+		if newHash, err := utils.UpgradePasswordHash(decryptedPassword); err == nil {
+			user.Password = newHash
+			// 注意：这里会在更新登录信息时一起保存
+		}
 	}
 
 	// 检查账户是否被锁定
@@ -205,9 +233,23 @@ func LoginHandler(c *gin.Context) {
 		}
 	}
 
-	// 生成JWT令牌
+	// 生成JWT令牌（包含完整用户信息）
 	cfg := config.GetConfig()
-	accessToken, err := utils.GenerateAccessToken(user.ID, user.Username, cfg.JWT.Secret, cfg.JWT.AccessTokenExpire)
+
+	// 获取用户角色和权限 (这里暂时为空，后续可以扩展)
+	roles := []string{}
+	permissions := []string{}
+
+	accessToken, err := utils.GenerateAccessTokenWithUserInfo(
+		user.ID,
+		user.Username,
+		user.Email,
+		user.DisplayName,
+		roles,
+		permissions,
+		cfg.JWT.Secret,
+		cfg.JWT.AccessTokenExpire,
+	)
 	if err != nil {
 		logger.ErrorError("Failed to generate access token",
 			zap.String("ip", c.ClientIP()),
@@ -242,7 +284,7 @@ func LoginHandler(c *gin.Context) {
 	user.LastLoginAt = &now
 	user.LastLoginIP = c.ClientIP()
 	user.LoginCount++
-	user.FailedCount = 0 // 重置失败次数
+	user.FailedCount = 0   // 重置失败次数
 	user.LockedUntil = nil // 清除锁定状态
 	database.DB.Save(&user)
 
@@ -314,7 +356,7 @@ func RefreshTokenHandler(c *gin.Context) {
 
 	// 获取用户信息
 	var user models.User
-	if err := database.DB.First(&user, claims.UserID).Error; err != nil {
+	if err := database.DB.Where("id = ?", claims.UserID).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
 			"message": i18n.UserNotFound,
@@ -333,8 +375,20 @@ func RefreshTokenHandler(c *gin.Context) {
 		return
 	}
 
-	// 生成新的令牌
-	accessToken, err := utils.GenerateAccessToken(user.ID, user.Username, cfg.JWT.Secret, cfg.JWT.AccessTokenExpire)
+	// 生成新的令牌（包含完整用户信息）
+	roles := []string{}
+	permissions := []string{}
+
+	accessToken, err := utils.GenerateAccessTokenWithUserInfo(
+		user.ID,
+		user.Username,
+		user.Email,
+		user.DisplayName,
+		roles,
+		permissions,
+		cfg.JWT.Secret,
+		cfg.JWT.AccessTokenExpire,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

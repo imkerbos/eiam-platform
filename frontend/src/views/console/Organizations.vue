@@ -42,6 +42,9 @@
               <a-button type="link" size="small" @click="editOrg(record)">
                 Edit
               </a-button>
+              <a-button type="link" size="small" @click="showAddUserToOrgModal(record)">
+                Add User
+              </a-button>
               <a-popconfirm
                 title="Are you sure you want to delete this organization?"
                 @confirm="deleteOrg(record.id)"
@@ -56,39 +59,104 @@
       </a-table>
 
       <!-- Tree View -->
-      <div v-else-if="viewMode === 'tree'" class="tree-view">
-        <a-tree
-          :tree-data="organizationTree"
-          :loading="loading"
-          :default-expand-all="true"
-          @select="handleTreeSelect"
-        >
-          <template #title="{ title, record }">
-            <span>{{ title }}</span>
-            <a-space style="margin-left: 8px">
-              <a-tag :color="getTypeColor(record.type)" size="small">
-                {{ getTypeName(record.type) }}
-              </a-tag>
-              <a-tag :color="record.status === 1 ? 'green' : 'red'" size="small">
-                {{ record.status === 1 ? 'Active' : 'Inactive' }}
-              </a-tag>
-              <a-button type="link" size="small" @click.stop="editOrg(record)">
-                Edit
-              </a-button>
-              <a-button type="link" size="small" @click.stop="showAddUserToOrgModal(record)">
-                Add User
-              </a-button>
-              <a-popconfirm
-                title="Are you sure you want to delete this organization?"
-                @confirm="deleteOrg(record.id)"
-              >
-                <a-button type="link" size="small" danger @click.stop>
-                  Delete
-                </a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
-        </a-tree>
+      <div v-else-if="viewMode === 'tree'" class="tree-layout">
+        <a-row :gutter="24">
+          <!-- Left Panel: Organization Tree -->
+          <a-col :span="12">
+            <a-card title="Organization Tree" size="small" :bordered="false">
+              <div class="tree-container">
+                <div
+                  v-for="org in flattenedTree"
+                  :key="org.id"
+                  class="tree-node"
+                  :class="{ 'tree-node-selected': selectedOrgId === org.id }"
+                  :style="{ paddingLeft: (org.level || 0) * 20 + 'px' }"
+                  @click="selectOrganization(org)"
+                >
+                  <div class="tree-node-content">
+                    <span v-if="org.children && org.children.length > 0" 
+                          class="tree-expand-icon" 
+                          @click.stop="toggleExpanded(org)">
+                      {{ org.expanded ? '▼' : '▶' }}
+                    </span>
+                    <span v-else class="tree-expand-placeholder"></span>
+                    
+                    <span class="tree-node-name">{{ org.name }}</span>
+                    
+                    <a-tag :color="getTypeColor(org.type)" size="small">
+                      {{ getTypeName(org.type) }}
+                    </a-tag>
+                    
+                    <div class="tree-node-actions">
+                      <a-button type="text" size="small" @click.stop="editOrg(org)">
+                        <EditOutlined />
+                      </a-button>
+                      <a-button type="text" size="small" @click.stop="showAddUserToOrgModal(org)">
+                        <UserAddOutlined />
+                      </a-button>
+                      <a-popconfirm
+                        title="Are you sure you want to delete this organization?"
+                        @confirm="deleteOrg(org.id)"
+                        @click.stop
+                      >
+                        <a-button type="text" size="small" danger>
+                          <DeleteOutlined />
+                        </a-button>
+                      </a-popconfirm>
+                    </div>
+                  </div>
+                </div>
+                
+                <a-empty v-if="!loading && flattenedTree.length === 0" description="No organizations found" />
+              </div>
+            </a-card>
+          </a-col>
+          
+          <!-- Right Panel: Users in Selected Organization -->
+          <a-col :span="12">
+            <a-card 
+              :title="selectedOrgUsers.length > 0 ? `Users in ${selectedOrgName}` : 'Select an organization to view users'" 
+              size="small" 
+              :bordered="false"
+            >
+              <template v-if="selectedOrgId">
+                <a-table
+                  :columns="userColumns"
+                  :data-source="selectedOrgUsers"
+                  :loading="usersLoading"
+                  :pagination="userPagination"
+                  @change="handleUserTableChange"
+                  row-key="id"
+                  size="small"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'avatar'">
+                      <UserAvatar :user="record" :size="32" />
+                    </template>
+                    <template v-else-if="column.key === 'status'">
+                      <a-tag :color="record.status === 1 ? 'green' : 'red'">
+                        {{ record.status === 1 ? 'Active' : 'Inactive' }}
+                      </a-tag>
+                    </template>
+                    <template v-else-if="column.key === 'action'">
+                      <a-space>
+                        <a-button type="link" size="small" @click="editUser(record)">
+                          Edit
+                        </a-button>
+                        <a-button type="link" size="small" danger @click="removeUserFromOrg(record.id)">
+                          Remove
+                        </a-button>
+                      </a-space>
+                    </template>
+                  </template>
+                </a-table>
+              </template>
+              <template v-else>
+                <a-empty description="Select an organization from the left panel to view its users" />
+              </template>
+            </a-card>
+          </a-col>
+        </a-row>
       </div>
     </a-card>
 
@@ -203,10 +271,16 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { 
+  PlusOutlined,
+  EditOutlined,
+  UserAddOutlined,
+  DeleteOutlined
+} from '@ant-design/icons-vue'
 import type { Organization, User } from '@/types/api'
 import { organizationApi, userApi } from '@/api/index'
 import type { CreateOrganizationRequest, UpdateOrganizationRequest } from '@/api/organizations'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 // Data
 const loading = ref(false)
@@ -226,9 +300,37 @@ const selectedUserId = ref<string | undefined>(undefined)
 const availableUsers = ref<User[]>([])
 const allUsers = ref<User[]>([])
 
+// Tree view specific data
+const selectedOrgId = ref<string>('')
+const selectedOrgName = ref<string>('')
+const selectedOrgUsers = ref<User[]>([])
+const usersLoading = ref(false)
+
 // Computed properties
 const selectedUser = computed(() => {
   return allUsers.value.find(user => user.id === selectedUserId.value)
+})
+
+const flattenedTree = computed(() => {
+  const flattenOrgs = (orgs: any[], level = 0): any[] => {
+    let result: any[] = []
+    for (const org of orgs) {
+      result.push({ ...org, level })
+      if (org.expanded && org.children && org.children.length > 0) {
+        result.push(...flattenOrgs(org.children, level + 1))
+      }
+    }
+    return result
+  }
+  
+  const sourceData = organizationTree.value.length > 0 ? organizationTree.value : organizations.value
+  // 确保每个组织都有 expanded 属性
+  const dataWithExpanded = sourceData.map(org => ({
+    ...org,
+    expanded: org.expanded || false
+  }))
+  
+  return flattenOrgs(dataWithExpanded)
 })
 
 const formData = reactive({
@@ -252,6 +354,13 @@ const formRules = {
 }
 
 const pagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  total_pages: 0
+})
+
+const userPagination = reactive({
   current: 1,
   pageSize: 10,
   total: 0,
@@ -306,23 +415,80 @@ const columns = [
   }
 ]
 
+const userColumns = [
+  {
+    title: 'Avatar',
+    key: 'avatar',
+    width: 60
+  },
+  {
+    title: 'Username',
+    dataIndex: 'username',
+    key: 'username'
+  },
+  {
+    title: 'Display Name',
+    dataIndex: 'display_name',
+    key: 'display_name'
+  },
+  {
+    title: 'Email',
+    dataIndex: 'email',
+    key: 'email'
+  },
+  {
+    title: 'Status',
+    dataIndex: 'status',
+    key: 'status',
+    width: 80
+  },
+  {
+    title: 'Action',
+    key: 'action',
+    width: 120
+  }
+]
+
 // Methods
 const loadOrganizations = async () => {
   loading.value = true
   try {
     if (viewMode.value === 'tree') {
-      const response = await organizationApi.getOrganizationsTree()
-      organizationTree.value = convertToTreeData(response)
+      try {
+        const response = await organizationApi.getOrganizationsTree()
+        organizationTree.value = convertToTreeData(response)
+      } catch (treeError) {
+        console.warn('Tree API failed, falling back to list API:', treeError)
+        // Fallback to regular list if tree API fails
+        const response = await organizationApi.getOrganizations({
+          page: pagination.current,
+          page_size: pagination.pageSize
+        })
+        // 为fallback数据也添加展开状态
+        const itemsWithExpanded = response.items.map((org: any) => ({
+          ...org,
+          expanded: org.expanded || false
+        }))
+        organizations.value = itemsWithExpanded
+        organizationTree.value = convertToTreeData(itemsWithExpanded)
+        pagination.total = response.total
+        pagination.total_pages = response.total_pages
+      }
     } else {
       const response = await organizationApi.getOrganizations({
         page: pagination.current,
         page_size: pagination.pageSize
       })
-      organizations.value = response.items
+      // 为普通列表数据也添加展开状态
+      organizations.value = response.items.map((org: any) => ({
+        ...org,
+        expanded: org.expanded || false
+      }))
       pagination.total = response.total
       pagination.total_pages = response.total_pages
     }
   } catch (error) {
+    console.error('Failed to load organizations:', error)
     message.error('Failed to load organizations')
   } finally {
     loading.value = false
@@ -330,18 +496,17 @@ const loadOrganizations = async () => {
 }
 
 const convertToTreeData = (organizations: any[]): any[] => {
+  if (!organizations || !Array.isArray(organizations)) {
+    return []
+  }
   return organizations.map(org => ({
-    key: org.id,
-    title: org.name,
-    record: org,
+    ...org,
+    expanded: org.expanded || false, // 确保有展开状态
     children: org.children ? convertToTreeData(org.children) : []
   }))
 }
 
-const handleTreeSelect = (selectedKeys: string[], info: any) => {
-  // Handle tree selection if needed
-  console.log('Selected:', selectedKeys, info)
-}
+
 
 const loadUsers = async () => {
   try {
@@ -535,11 +700,112 @@ const getTypeName = (type: number) => {
   }
 }
 
+
+
+// Tree expand/collapse functionality
+const toggleExpanded = (record: any) => {
+  console.log('toggleExpanded called:', record.id, record.name, 'has children:', record.children?.length || 0)
+  
+  if (record.children && record.children.length > 0) {
+    // Find and update the item in the source data
+    const updateExpandedState = (items: any[], targetId: string, newState: boolean): boolean => {
+      for (const item of items) {
+        if (item.id === targetId) {
+          console.log('Found item to update:', item.id, 'from', item.expanded, 'to', newState)
+          item.expanded = newState
+          return true
+        }
+        if (item.children && item.children.length > 0) {
+          if (updateExpandedState(item.children, targetId, newState)) {
+            return true
+          }
+        }
+      }
+      return false
+    }
+    
+    const newExpandedState = !record.expanded
+    console.log('New expanded state:', newExpandedState)
+    
+    // Update in the source data
+    if (organizationTree.value.length > 0) {
+      console.log('Updating organizationTree')
+      updateExpandedState(organizationTree.value, record.id, newExpandedState)
+      // Force reactivity update
+      organizationTree.value = [...organizationTree.value]
+    } else {
+      console.log('Updating organizations')
+      updateExpandedState(organizations.value, record.id, newExpandedState)
+      // Force reactivity update
+      organizations.value = [...organizations.value]
+    }
+  } else {
+    console.log('No children to expand/collapse')
+  }
+}
+
+// Tree view specific functions
+const selectOrganization = (org: Organization) => {
+  selectedOrgId.value = org.id
+  selectedOrgName.value = org.name
+  loadOrganizationUsers(org.id)
+}
+
+const loadOrganizationUsers = async (orgId: string) => {
+  usersLoading.value = true
+  try {
+    const response = await userApi.getUsers({
+      organization_id: orgId,
+      page: userPagination.current,
+      page_size: userPagination.pageSize
+    })
+    selectedOrgUsers.value = response.items
+    userPagination.total = response.total
+    userPagination.total_pages = response.total_pages
+  } catch (error) {
+    console.error('Failed to load organization users:', error)
+    message.error('Failed to load organization users')
+  } finally {
+    usersLoading.value = false
+  }
+}
+
+const handleUserTableChange = (pag: any) => {
+  userPagination.current = pag.current
+  userPagination.pageSize = pag.pageSize
+  if (selectedOrgId.value) {
+    loadOrganizationUsers(selectedOrgId.value)
+  }
+}
+
+const editUser = (_user: User) => {
+  // Navigate to user edit page or open user edit modal
+  // This functionality can be implemented later
+  message.info('User edit functionality will be implemented')
+}
+
+const removeUserFromOrg = async (_userId: string) => {
+  try {
+    // This API endpoint might need to be implemented in the backend
+    // For now, we'll just show a message
+    message.info('Remove user from organization functionality will be implemented')
+    // After successful removal, reload the user list
+    // if (selectedOrgId.value) {
+    //   loadOrganizationUsers(selectedOrgId.value)
+    // }
+  } catch (error) {
+    console.error('Failed to remove user from organization:', error)
+    message.error('Failed to remove user from organization')
+  }
+}
+
 // Lifecycle
 onMounted(() => {
   loadOrganizations()
   loadUsers()
 })
+
+// Define TreeTableRow as a component for use in template
 
 // Watch view mode changes
 watch(viewMode, () => {
@@ -550,5 +816,101 @@ watch(viewMode, () => {
 <style scoped>
 .organizations-page {
   padding: 24px;
+}
+
+.tree-layout {
+  margin-top: 16px;
+}
+
+.tree-container {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.tree-node {
+  padding: 8px 16px;
+  margin: 2px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.tree-node:hover {
+  background-color: #f5f5f5;
+}
+
+.tree-node-selected {
+  background-color: #e6f7ff;
+  border-color: #1890ff;
+}
+
+.tree-node-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-expand-icon {
+  width: 16px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  color: #666;
+  font-size: 12px;
+}
+
+.tree-expand-icon:hover {
+  color: #1890ff;
+}
+
+.tree-expand-placeholder {
+  width: 16px;
+}
+
+.tree-node-name {
+  flex: 1;
+  font-weight: 500;
+  color: #262626;
+}
+
+.tree-node-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.tree-node:hover .tree-node-actions {
+  opacity: 1;
+}
+
+.tree-node-actions .ant-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Compact style for tree layout */
+.tree-layout .ant-card-body {
+  padding: 16px;
+}
+
+.tree-layout .ant-table-tbody > tr > td {
+  padding: 8px 12px;
+}
+
+.tree-layout .ant-table-small {
+  font-size: 13px;
+}
+
+.tree-layout .ant-tag {
+  margin: 0;
+  font-size: 11px;
+  padding: 2px 6px;
+  line-height: 16px;
 }
 </style>

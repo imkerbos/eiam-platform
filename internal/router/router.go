@@ -55,6 +55,8 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 	{
 		v1 := api.Group("/v1")
 		{
+			// 公开API端点（不需要认证）
+			v1.GET("/public/site-info", handlers.GetPublicSiteInfoHandler)
 			// 通用认证API
 			auth := v1.Group("/auth")
 			{

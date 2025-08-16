@@ -79,6 +79,8 @@ type OrganizationTreeInfo struct {
 	Sort        int                    `json:"sort"`
 	Description string                 `json:"description"`
 	Manager     string                 `json:"manager"`
+	ManagerID   string                 `json:"manager_id"`
+	ManagerName string                 `json:"manager_name"`
 	Location    string                 `json:"location"`
 	Phone       string                 `json:"phone"`
 	Email       string                 `json:"email"`
@@ -692,6 +694,20 @@ func convertToTreeInfo(org models.Organization) OrganizationTreeInfo {
 		children[i] = convertToTreeInfo(child)
 	}
 
+	// Get manager username if manager ID exists
+	managerID := org.Manager
+	managerName := ""
+	if org.Manager != "" {
+		var managerUser models.User
+		if err := database.DB.Select("username, display_name").Where("id = ?", org.Manager).First(&managerUser).Error; err == nil {
+			if managerUser.DisplayName != "" {
+				managerName = managerUser.DisplayName
+			} else {
+				managerName = managerUser.Username
+			}
+		}
+	}
+
 	return OrganizationTreeInfo{
 		ID:          org.ID,
 		Name:        org.Name,
@@ -703,7 +719,9 @@ func convertToTreeInfo(org models.Organization) OrganizationTreeInfo {
 		Path:        org.Path,
 		Sort:        org.Sort,
 		Description: org.Description,
-		Manager:     org.Manager,
+		Manager:     managerName, // 显示名称，向后兼容
+		ManagerID:   managerID,   // 用户ID，用于编辑
+		ManagerName: managerName, // 显示名称，明确字段
 		Location:    org.Location,
 		Phone:       org.Phone,
 		Email:       org.Email,

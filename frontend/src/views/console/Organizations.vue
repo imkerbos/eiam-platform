@@ -704,14 +704,11 @@ const getTypeName = (type: number) => {
 
 // Tree expand/collapse functionality
 const toggleExpanded = (record: any) => {
-  console.log('toggleExpanded called:', record.id, record.name, 'has children:', record.children?.length || 0)
-  
   if (record.children && record.children.length > 0) {
     // Find and update the item in the source data
     const updateExpandedState = (items: any[], targetId: string, newState: boolean): boolean => {
       for (const item of items) {
         if (item.id === targetId) {
-          console.log('Found item to update:', item.id, 'from', item.expanded, 'to', newState)
           item.expanded = newState
           return true
         }
@@ -725,22 +722,17 @@ const toggleExpanded = (record: any) => {
     }
     
     const newExpandedState = !record.expanded
-    console.log('New expanded state:', newExpandedState)
     
     // Update in the source data
     if (organizationTree.value.length > 0) {
-      console.log('Updating organizationTree')
       updateExpandedState(organizationTree.value, record.id, newExpandedState)
       // Force reactivity update
       organizationTree.value = [...organizationTree.value]
     } else {
-      console.log('Updating organizations')
       updateExpandedState(organizations.value, record.id, newExpandedState)
       // Force reactivity update
       organizations.value = [...organizations.value]
     }
-  } else {
-    console.log('No children to expand/collapse')
   }
 }
 

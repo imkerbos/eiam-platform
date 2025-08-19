@@ -16,11 +16,7 @@
 import { computed, ref, watch } from 'vue'
 
 interface Props {
-  user?: {
-    display_name?: string
-    username?: string
-    avatar?: string
-  }
+  user?: any // 允许任何用户对象类型
   username?: string
   displayName?: string
   avatar?: string

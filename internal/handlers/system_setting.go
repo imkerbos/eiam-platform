@@ -654,15 +654,15 @@ func timeAgo(t time.Time) string {
 func GetPublicSiteInfoHandler(c *gin.Context) {
 	var siteNameSetting, logoSetting models.SystemSetting
 
-		// 获取站点名称
-	if err := database.DB.Where("category = ? AND key = ?", "site", "site_name").First(&siteNameSetting).Error; err != nil {
+	// 获取站点名称
+	if err := database.DB.Where("category = ? AND `key` = ?", "site", "site_name").First(&siteNameSetting).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.ErrorError("Failed to get site name setting", zap.Error(err))
 		}
 	}
-	
+
 	// 获取logo URL
-	if err := database.DB.Where("category = ? AND key = ?", "site", "logo_url").First(&logoSetting).Error; err != nil {
+	if err := database.DB.Where("category = ? AND `key` = ?", "site", "logo_url").First(&logoSetting).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.ErrorError("Failed to get logo setting", zap.Error(err))
 		}

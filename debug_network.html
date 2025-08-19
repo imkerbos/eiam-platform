@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Network Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; }
+        .error { background-color: #f8d7da; }
+        .info { background-color: #d1ecf1; }
+        button { margin: 5px; padding: 10px 15px; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Network Debug Console</h1>
+    
+    <div class="test info">
+        <h3>网络测试</h3>
+        <button onclick="testDirectBackend()">1. 直接访问后端</button>
+        <button onclick="testFrontendProxy()">2. 通过前端代理</button>
+        <button onclick="testCORS()">3. 测试CORS</button>
+        <button onclick="testLoginAPI()">4. 测试登录API</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script>
+        function addResult(message, type = 'info', data = null) {
+            const div = document.createElement('div');
+            div.className = `test ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong> - ${message}`;
+            if (data) {
+                div.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+            document.getElementById('results').appendChild(div);
+        }
+        
+        async function testDirectBackend() {
+            addResult('测试直接访问后端...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:8080/health');
+                const data = await response.json();
+                addResult('✅ 直接访问后端成功', 'success', data);
+            } catch (error) {
+                addResult('❌ 直接访问后端失败', 'error', { error: error.message });
+            }
+        }
+        
+        async function testFrontendProxy() {
+            addResult('测试前端代理...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:3000/api/v1/public/site-info');
+                const data = await response.json();
+                addResult('✅ 前端代理成功', 'success', data);
+            } catch (error) {
+                addResult('❌ 前端代理失败', 'error', { error: error.message });
+            }
+        }
+        
+        async function testCORS() {
+            addResult('测试CORS...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:8080/api/v1/public/site-info', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                addResult('✅ CORS测试成功', 'success', data);
+            } catch (error) {
+                addResult('❌ CORS测试失败', 'error', { error: error.message });
+            }
+        }
+        
+        async function testLoginAPI() {
+            addResult('测试登录API...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:3000/api/v1/console/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: 'admin',
+                        password: 'admin123'
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                addResult('✅ 登录API成功', 'success', {
+                    code: data.code,
+                    user: data.data.user.username,
+                    roles: data.data.user.roles
+                });
+            } catch (error) {
+                addResult('❌ 登录API失败', 'error', { 
+                    error: error.message,
+                    type: error.name,
+                    stack: error.stack
+                });
+            }
+        }
+    </script>
+</body>
+</html>

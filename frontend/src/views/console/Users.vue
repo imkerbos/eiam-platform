@@ -35,6 +35,9 @@
               <a-button type="link" size="small" @click="resetPassword(record)">
                 Reset Password
               </a-button>
+              <a-button type="link" size="small" @click="showUserSessions(record)">
+                Sessions
+              </a-button>
               <a-popconfirm
                 title="Are you sure you want to delete this user?"
                 @confirm="deleteUser(record.id)"
@@ -92,6 +95,65 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- User Sessions Modal -->
+    <a-modal
+      v-model:open="sessionsModalVisible"
+      title="User Sessions"
+      width="800px"
+      @ok="handleSessionsModalOk"
+      @cancel="handleSessionsModalCancel"
+    >
+      <div v-if="selectedUser">
+        <p><strong>User:</strong> {{ selectedUser.display_name }} ({{ selectedUser.username }})</p>
+        <p><strong>Email:</strong> {{ selectedUser.email }}</p>
+      </div>
+      
+      <a-table
+        :columns="sessionColumns"
+        :data-source="userSessions"
+        :loading="sessionsLoading"
+        :pagination="false"
+        row-key="session_id"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'login_time'">
+            {{ formatDateTime(record.login_time) }}
+          </template>
+          <template v-else-if="column.key === 'last_activity'">
+            {{ formatDateTime(record.last_activity) }}
+          </template>
+          <template v-else-if="column.key === 'expires_at'">
+            {{ formatDateTime(record.expires_at) }}
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <a-popconfirm
+              title="Are you sure you want to force logout this session?"
+              @confirm="forceLogoutSession(record.session_id)"
+            >
+              <a-button type="link" size="small" danger>
+                Force Logout
+              </a-button>
+            </a-popconfirm>
+          </template>
+        </template>
+      </a-table>
+      
+      <template #footer>
+        <a-space>
+          <a-button @click="handleSessionsModalCancel">Close</a-button>
+          <a-popconfirm
+            title="Are you sure you want to force logout all sessions for this user?"
+            @confirm="forceLogoutAllSessions"
+          >
+            <a-button type="primary" danger>
+              Force Logout All Sessions
+            </a-button>
+          </a-popconfirm>
+        </a-space>
+      </template>
+    </a-modal>
   </div>
 </template>
 
@@ -102,6 +164,8 @@ import { PlusOutlined } from '@ant-design/icons-vue'
 import type { User, PaginatedResponse } from '@/types/api'
 import { userApi, organizationApi } from '@/api/index'
 import type { CreateUserRequest, UpdateUserRequest } from '@/api/users'
+import { getUserSessions, forceLogoutUser } from '@/api/session'
+import type { SessionInfo } from '@/api/session'
 import UserAvatar from '@/components/UserAvatar.vue'
 
 // Data
@@ -112,6 +176,12 @@ const modalVisible = ref(false)
 const modalTitle = ref('Add User')
 const formRef = ref()
 const editingUser = ref<User | null>(null)
+
+// Session management
+const sessionsModalVisible = ref(false)
+const selectedUser = ref<User | null>(null)
+const userSessions = ref<SessionInfo[]>([])
+const sessionsLoading = ref(false)
 
 const formData = reactive({
   username: '',
@@ -195,6 +265,53 @@ const columns = [
   {
     title: 'Action',
     key: 'action'
+  }
+]
+
+// Session columns
+const sessionColumns = [
+  {
+    title: 'Session ID',
+    dataIndex: 'session_id',
+    key: 'session_id',
+    width: 200,
+    ellipsis: true
+  },
+  {
+    title: 'Login IP',
+    dataIndex: 'login_ip',
+    key: 'login_ip',
+    width: 120
+  },
+  {
+    title: 'User Agent',
+    dataIndex: 'user_agent',
+    key: 'user_agent',
+    width: 200,
+    ellipsis: true
+  },
+  {
+    title: 'Login Time',
+    dataIndex: 'login_time',
+    key: 'login_time',
+    width: 150
+  },
+  {
+    title: 'Last Activity',
+    dataIndex: 'last_activity',
+    key: 'last_activity',
+    width: 150
+  },
+  {
+    title: 'Expires At',
+    dataIndex: 'expires_at',
+    key: 'expires_at',
+    width: 150
+  },
+  {
+    title: 'Action',
+    key: 'action',
+    width: 100
   }
 ]
 
@@ -345,6 +462,62 @@ const deleteUser = async (userId: string) => {
   } catch (error) {
     message.error('Failed to delete user')
   }
+}
+
+// Session management functions
+const formatDateTime = (dateString: string) => {
+  return new Date(dateString).toLocaleString()
+}
+
+const showUserSessions = async (user: User) => {
+  selectedUser.value = user
+  sessionsModalVisible.value = true
+  await loadUserSessions(user.id)
+}
+
+const loadUserSessions = async (userId: string) => {
+  sessionsLoading.value = true
+  try {
+    const response = await getUserSessions(userId)
+    userSessions.value = response.data || []
+  } catch (error) {
+    message.error('Failed to load user sessions')
+    userSessions.value = []
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+const forceLogoutSession = async (sessionId: string) => {
+  try {
+    // Note: Currently we can only force logout all sessions for a user
+    // Individual session logout would require additional backend API
+    message.warning('Individual session logout not implemented yet')
+  } catch (error) {
+    message.error('Failed to force logout session')
+  }
+}
+
+const forceLogoutAllSessions = async () => {
+  if (!selectedUser.value) return
+  
+  try {
+    await forceLogoutUser(selectedUser.value.id)
+    message.success('All sessions force logged out successfully')
+    await loadUserSessions(selectedUser.value.id)
+  } catch (error) {
+    message.error('Failed to force logout all sessions')
+  }
+}
+
+const handleSessionsModalOk = () => {
+  sessionsModalVisible.value = false
+}
+
+const handleSessionsModalCancel = () => {
+  sessionsModalVisible.value = false
+  selectedUser.value = null
+  userSessions.value = []
 }
 
 // Lifecycle

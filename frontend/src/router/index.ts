@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { TokenManager } from '@/utils/storage'
+import { useUserStore } from '@/stores/user'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -27,61 +28,61 @@ const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/console/Dashboard.vue'),
-        meta: { title: 'Dashboard' }
+        meta: { title: 'Dashboard', requiresAdmin: true }
       },
       {
         path: 'users',
         name: 'Users',
         component: () => import('@/views/console/Users.vue'),
-        meta: { title: 'User Management' }
+        meta: { title: 'User Management', requiresAdmin: true }
       },
                   {
               path: 'organizations',
               name: 'Organizations',
               component: () => import('@/views/console/Organizations.vue'),
-              meta: { title: 'Organization Management' }
+              meta: { title: 'Organization Management', requiresAdmin: true }
             },
             {
               path: 'permissions',
               name: 'Permissions',
               component: () => import('@/views/console/Permissions.vue'),
-              meta: { title: 'Permissions Management' }
+              meta: { title: 'Permissions Management', requiresAdmin: true }
             },
             {
               path: 'system',
               name: 'System',
               component: () => import('@/views/console/System.vue'),
-              meta: { title: 'System Management' }
+              meta: { title: 'System Management', requiresAdmin: true }
             },
             {
               path: 'audit',
               name: 'Audit',
               component: () => import('@/views/console/Audit.vue'),
-              meta: { title: 'Audit & Monitoring' }
+              meta: { title: 'Audit & Monitoring', requiresAdmin: true }
             },
             {
               path: 'security',
               name: 'Security',
               component: () => import('@/views/console/Security.vue'),
-              meta: { title: 'Security Settings' }
+              meta: { title: 'Security Settings', requiresAdmin: true }
             },
       {
         path: 'roles',
         name: 'Roles',
         component: () => import('@/views/console/Roles.vue'),
-        meta: { title: 'Role Management' }
+        meta: { title: 'Role Management', requiresAdmin: true }
       },
       {
         path: 'applications',
         name: 'Applications',
         component: () => import('@/views/console/Applications.vue'),
-        meta: { title: 'Application Management' }
+        meta: { title: 'Application Management', requiresAdmin: true }
       },
       {
         path: 'application-groups',
         name: 'ApplicationGroups',
         component: () => import('@/views/console/ApplicationGroups.vue'),
-        meta: { title: 'Application Groups' }
+        meta: { title: 'Application Groups', requiresAdmin: true }
       }
     ]
   },
@@ -117,22 +118,47 @@ const router = createRouter({
 })
 
 // Navigation guard
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   // Set page title
   document.title = to.meta.title ? `${to.meta.title} - EIAM Platform` : 'EIAM Platform'
   
   // Check authentication - 使用新的安全存储
   const token = TokenManager.getAccessToken()
+  const userStore = useUserStore()
+  
   console.log('路由守卫检查:', {
     to: to.path,
     from: from.path,
     hasToken: !!token,
-    requiresAuth: to.meta.requiresAuth
+    requiresAuth: to.meta.requiresAuth,
+    requiresAdmin: to.meta.requiresAdmin,
+    isAdmin: userStore.isAdmin,
+    userRoles: userStore.userRoles,
+    user: userStore.user
   })
+  
+  // 如果有token但没有用户信息，尝试获取用户信息
+  if (token && !userStore.user) {
+    try {
+      console.log('尝试获取用户信息...')
+      await userStore.getCurrentUser()
+      console.log('用户信息获取成功:', userStore.user)
+    } catch (error) {
+      console.error('获取用户信息失败:', error)
+      // 如果获取用户信息失败，清除token并跳转到登录页
+      userStore.clearAuth()
+      next('/login')
+      return
+    }
+  }
   
   if (to.meta.requiresAuth && !token) {
     console.log('需要认证但无token，跳转到登录页')
     next('/login')
+  } else if (to.meta.requiresAdmin && !userStore.isAdmin) {
+    console.log('需要管理员权限但用户不是管理员，跳转到Portal')
+    console.log('用户角色:', userStore.userRoles)
+    next('/portal')
   } else if (to.path === '/login' && token) {
     console.log('已登录用户访问登录页，跳转到控制台')
     next('/console')

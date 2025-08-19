@@ -169,11 +169,12 @@ export const secureStorage = new SecureStorage()
  */
 export const StorageConfigs = {
   // Access Token - 使用sessionStorage，页面关闭后自动清除，更安全
+  // 不设置expireTime，让JWT本身的过期时间来控制
   ACCESS_TOKEN: {
     key: 'access_token',
     type: StorageType.SESSION,
-    encrypt: true,
-    expireTime: 24 * 60 * 60 * 1000 // 24小时
+    encrypt: true
+    // 移除expireTime，依赖JWT token本身的过期时间
   } as StorageConfig,
 
   // Refresh Token - 使用localStorage，但加密存储
@@ -250,6 +251,7 @@ export const UserInfoManager = {
    * 设置用户信息
    */
   setUserInfo(userInfo: any): void {
+    console.log('UserInfoManager.setUserInfo:', userInfo)
     secureStorage.setItem(StorageConfigs.USER_INFO, userInfo)
   },
 
@@ -257,7 +259,9 @@ export const UserInfoManager = {
    * 获取用户信息
    */
   getUserInfo(): any | null {
-    return secureStorage.getItem(StorageConfigs.USER_INFO)
+    const userInfo = secureStorage.getItem(StorageConfigs.USER_INFO)
+    console.log('UserInfoManager.getUserInfo:', userInfo)
+    return userInfo
   },
 
   /**

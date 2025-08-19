@@ -25,6 +25,9 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 	// 创建Gin引擎
 	r := gin.New()
 
+	// 获取sessionManager实例
+	sessionManager := handlers.GetSessionManager()
+
 	// 添加中间件
 	r.Use(middleware.RequestIDMiddleware())
 	r.Use(middleware.TradeIDMiddleware())
@@ -62,7 +65,7 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 			{
 				auth.POST("/login", handlers.LoginHandler)
 				auth.POST("/refresh", handlers.RefreshTokenHandler)
-				auth.POST("/logout", middleware.AuthMiddleware(jwtManager), handlers.LogoutHandler)
+				auth.POST("/logout", middleware.AuthMiddleware(jwtManager, sessionManager), handlers.LogoutHandler)
 			}
 
 			// Console管理后台API
@@ -84,18 +87,31 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 
 // setupConsoleRoutes 设置Console管理后台路由
 func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) {
+	// 获取sessionManager实例
+	sessionManager := handlers.GetSessionManager()
 	// 管理员认证
 	auth := console.Group("/auth")
 	{
 		auth.POST("/login", handlers.ConsoleLoginHandler)
-		auth.POST("/logout", middleware.AuthMiddleware(jwtManager), handlers.ConsoleLogoutHandler)
+		auth.POST("/logout", middleware.AuthMiddleware(jwtManager, sessionManager), handlers.LogoutHandler)
 		auth.POST("/refresh", handlers.ConsoleRefreshTokenHandler)
-		auth.GET("/me", middleware.AuthMiddleware(jwtManager), handlers.ConsoleGetMeHandler)
+		auth.GET("/me", middleware.AuthMiddleware(jwtManager, sessionManager), handlers.ConsoleGetMeHandler)
 	}
 
-	// 用户管理（需要认证）
+	// 会话管理（需要管理员权限）
+	sessions := console.Group("/sessions")
+	sessions.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	sessions.Use(middleware.AdminMiddleware())
+	{
+		sessions.GET("", handlers.GetAllSessionsHandler)                   // 获取所有在线会话
+		sessions.GET("/users/:userID", handlers.GetUserSessionsHandler)    // 获取用户会话列表
+		sessions.DELETE("/users/:userID", handlers.ForceLogoutUserHandler) // 强制用户下线
+	}
+
+	// 用户管理（需要管理员权限）
 	users := console.Group("/users")
-	users.Use(middleware.AuthMiddleware(jwtManager))
+	users.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	users.Use(middleware.AdminMiddleware())
 	{
 		users.GET("", handlers.GetUsersHandler)
 		users.POST("", handlers.CreateUserHandler)
@@ -104,9 +120,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		users.DELETE("/:id", handlers.DeleteUserHandler)
 	}
 
-	// 组织管理（需要认证）
+	// 组织管理（需要管理员权限）
 	organizations := console.Group("/organizations")
-	organizations.Use(middleware.AuthMiddleware(jwtManager))
+	organizations.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	organizations.Use(middleware.AdminMiddleware())
 	{
 		organizations.GET("", handlers.GetOrganizationsHandler)
 		organizations.GET("/tree", handlers.GetOrganizationsTreeHandler)
@@ -116,9 +133,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		organizations.DELETE("/:id", handlers.DeleteOrganizationHandler)
 	}
 
-	// 角色管理（需要认证）
+	// 角色管理（需要管理员权限）
 	roles := console.Group("/roles")
-	roles.Use(middleware.AuthMiddleware(jwtManager))
+	roles.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	roles.Use(middleware.AdminMiddleware())
 	{
 		roles.GET("", handlers.GetRolesHandler)
 		roles.POST("", handlers.CreateRoleHandler)
@@ -126,9 +144,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		roles.DELETE("/:id", handlers.DeleteRoleHandler)
 	}
 
-	// 权限管理（需要认证）
+	// 权限管理（需要管理员权限）
 	permissions := console.Group("/permissions")
-	permissions.Use(middleware.AuthMiddleware(jwtManager))
+	permissions.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	permissions.Use(middleware.AdminMiddleware())
 	{
 		permissions.GET("", handlers.GetPermissionsHandler)
 		permissions.POST("", handlers.CreatePermissionHandler)
@@ -136,9 +155,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		permissions.DELETE("/:id", handlers.DeletePermissionHandler)
 	}
 
-	// 应用管理（需要认证）
+	// 应用管理（需要管理员权限）
 	applications := console.Group("/applications")
-	applications.Use(middleware.AuthMiddleware(jwtManager))
+	applications.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	applications.Use(middleware.AdminMiddleware())
 	{
 		applications.GET("", handlers.GetApplicationsHandler)
 		applications.POST("", handlers.CreateApplicationHandler)
@@ -146,9 +166,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		applications.DELETE("/:id", handlers.DeleteApplicationHandler)
 	}
 
-	// 应用分组管理（需要认证）
+	// 应用分组管理（需要管理员权限）
 	appGroups := console.Group("/application-groups")
-	appGroups.Use(middleware.AuthMiddleware(jwtManager))
+	appGroups.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	appGroups.Use(middleware.AdminMiddleware())
 	{
 		appGroups.GET("", handlers.GetApplicationGroupsHandler)
 		appGroups.POST("", handlers.CreateApplicationGroupHandler)
@@ -156,9 +177,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		appGroups.DELETE("/:id", handlers.DeleteApplicationGroupHandler)
 	}
 
-	// 系统设置管理（需要认证）
+	// 系统设置管理（需要管理员权限）
 	system := console.Group("/system")
-	system.Use(middleware.AuthMiddleware(jwtManager))
+	system.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	system.Use(middleware.AdminMiddleware())
 	{
 		system.GET("/settings", handlers.GetSystemSettingsHandler)
 		system.PUT("/settings", handlers.UpdateSystemSettingsHandler)
@@ -166,18 +188,20 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		system.GET("/security-settings", handlers.GetSecuritySettingsHandler)
 	}
 
-	// 系统API（需要认证）
+	// 系统API（需要管理员权限）
 	systemAPI := console.Group("/dashboard")
-	systemAPI.Use(middleware.AuthMiddleware(jwtManager))
+	systemAPI.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	systemAPI.Use(middleware.AdminMiddleware())
 	{
 		systemAPI.GET("", handlers.GetDashboardData)
 		systemAPI.GET("/stats", handlers.GetSystemStats)
 		systemAPI.GET("/activities", handlers.GetRecentActivities)
 	}
 
-	// 日志管理（需要认证）
+	// 日志管理（需要管理员权限）
 	logs := console.Group("/logs")
-	logs.Use(middleware.AuthMiddleware(jwtManager))
+	logs.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	logs.Use(middleware.AdminMiddleware())
 	{
 		logs.GET("/login", handlers.GetLoginLogsHandler)
 		logs.GET("/audit", handlers.GetAuditLogsHandler)
@@ -186,13 +210,15 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 
 // setupPortalRoutes 设置Portal用户端路由
 func setupPortalRoutes(portal *gin.RouterGroup, jwtManager *utils.JWTManager) {
+	// 获取sessionManager实例
+	sessionManager := handlers.GetSessionManager()
 	// 用户认证
 	auth := portal.Group("/auth")
 	{
 		auth.POST("/login", handlers.PortalLoginHandler)
-		auth.POST("/logout", middleware.AuthMiddleware(jwtManager), handlers.PortalLogoutHandler)
+		auth.POST("/logout", middleware.AuthMiddleware(jwtManager, sessionManager), handlers.PortalLogoutHandler)
 		auth.POST("/refresh", handlers.PortalRefreshTokenHandler)
-		auth.GET("/me", middleware.AuthMiddleware(jwtManager), handlers.PortalGetMeHandler)
+		auth.GET("/me", middleware.AuthMiddleware(jwtManager, sessionManager), handlers.PortalGetMeHandler)
 	}
 
 	// OTP相关
@@ -207,12 +233,12 @@ func setupPortalRoutes(portal *gin.RouterGroup, jwtManager *utils.JWTManager) {
 	{
 		password.POST("/forgot", handlers.ForgotPasswordHandler)
 		password.POST("/reset", handlers.ResetPasswordHandler)
-		password.PUT("/change", middleware.AuthMiddleware(jwtManager), handlers.ChangePasswordHandler)
+		password.PUT("/change", middleware.AuthMiddleware(jwtManager, sessionManager), handlers.ChangePasswordHandler)
 	}
 
 	// 用户资料管理（需要认证）
 	profile := portal.Group("/profile")
-	profile.Use(middleware.AuthMiddleware(jwtManager))
+	profile.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
 	{
 		profile.GET("", handlers.GetProfileHandler)
 		profile.PUT("", handlers.UpdateProfileHandler)
@@ -226,7 +252,7 @@ func setupPortalRoutes(portal *gin.RouterGroup, jwtManager *utils.JWTManager) {
 
 	// OTP设置（需要认证）
 	otpSettings := portal.Group("/otp-settings")
-	otpSettings.Use(middleware.AuthMiddleware(jwtManager))
+	otpSettings.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
 	{
 		otpSettings.POST("/enable", handlers.EnableOTPHandler)
 		otpSettings.POST("/disable", handlers.DisableOTPHandler)
@@ -234,7 +260,7 @@ func setupPortalRoutes(portal *gin.RouterGroup, jwtManager *utils.JWTManager) {
 
 	// 用户应用（需要认证）
 	userApps := portal.Group("/applications")
-	userApps.Use(middleware.AuthMiddleware(jwtManager))
+	userApps.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
 	{
 		userApps.GET("", handlers.GetUserApplicationsHandler)
 		userApps.GET("/:id", handlers.GetUserApplicationHandler)

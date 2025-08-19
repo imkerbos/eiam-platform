@@ -9,9 +9,9 @@ import './styles/index.css'
 import { initStorageMigration } from './utils/migration'
 import { useSiteStore } from './stores/site'
 
-// 在开发环境中导入存储测试
+// 在开发环境中可以添加调试代码
 if (import.meta.env.DEV) {
-  import('./utils/storage-test')
+  console.log('EIAM Platform - Development Mode')
 }
 
 // 初始化存储迁移

@@ -17,6 +17,7 @@ type AccessTokenClaims struct {
 	DisplayName string   `json:"display_name"`
 	Roles       []string `json:"roles"`
 	Permissions []string `json:"permissions"`
+	SessionID   string   `json:"session_id"` // 添加session_id关联
 	TradeID     string   `json:"trade_id"`
 	TokenType   string   `json:"token_type"` // "access"
 	jwt.RegisteredClaims
@@ -71,6 +72,7 @@ func (j *JWTManager) GenerateAccessToken(tokenInfo *TokenInfo) (string, error) {
 		DisplayName: tokenInfo.DisplayName,
 		Roles:       tokenInfo.Roles,
 		Permissions: tokenInfo.Permissions,
+		SessionID:   tokenInfo.SessionID, // 添加session_id
 		TradeID:     tokenInfo.TradeID,
 		TokenType:   "access",
 		RegisteredClaims: jwt.RegisteredClaims{

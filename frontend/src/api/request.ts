@@ -6,7 +6,7 @@ import { TokenManager } from '@/utils/storage'
 
 // Create axios instance
 const request: AxiosInstance = axios.create({
-  baseURL: '/api/v1',
+  baseURL: '/api/v1', // 使用代理访问后端
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'

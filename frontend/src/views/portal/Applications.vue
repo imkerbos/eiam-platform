@@ -95,6 +95,7 @@ import {
   MobileOutlined,
   ApiOutlined
 } from '@ant-design/icons-vue'
+import { applicationApi } from '@/api/applications'
 
 // Search functionality
 const searchText = ref('')
@@ -293,12 +294,47 @@ const openApplication = (app: any) => {
 // Load applications
 const loadApplications = async () => {
   try {
-    // TODO: Implement API call to load user's applications
-    // const response = await applicationApi.getUserApplications()
-    // applicationGroups.value = response.data
+    // 从后端API获取用户的应用列表
+    const result = await applicationApi.getUserApplications()
+    
+    if (result && Array.isArray(result)) {
+      // 转换API数据格式为前端需要的格式
+      originalApplicationGroups.value = result.map((group: any) => ({
+        id: group.id,
+        name: group.name,
+        description: group.description,
+        color: group.color,
+        icon: getGroupIcon(group.name),
+        applications: group.applications.map((app: any) => ({
+          id: app.id,
+          name: app.name,
+          description: app.description,
+          logo: app.logo,
+          type: app.type,
+          status: app.status,
+          url: app.url
+        }))
+      }))
+    } else {
+      throw new Error('Invalid response format')
+    }
   } catch (error) {
+    console.error('Failed to load applications:', error)
     message.error('Failed to load applications')
+    // 如果API失败，保持demo数据作为fallback
   }
+}
+
+// 根据组名获取图标
+const getGroupIcon = (groupName: string) => {
+  const iconMap: { [key: string]: any } = {
+    'Internal Apps': ToolOutlined,
+    'Business Apps': DesktopOutlined,
+    'Communication': CloudOutlined,
+    'Mobile Apps': MobileOutlined,
+    'API Services': ApiOutlined
+  }
+  return iconMap[groupName] || AppstoreOutlined
 }
 
 onMounted(() => {

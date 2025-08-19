@@ -27,6 +27,8 @@ export interface User {
   enable_otp: boolean
   organization_id?: string
   organization?: Organization
+  roles?: string[]
+  permissions?: string[]
   created_at: string
   updated_at: string
 }
@@ -126,6 +128,7 @@ export interface LoginResponse {
   expires_in: number
   user: User
   require_otp: boolean
+  session_id?: string
 }
 
 export interface RefreshTokenRequest {

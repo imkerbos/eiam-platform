@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"eiam-platform/config"
@@ -9,6 +11,8 @@ import (
 	"eiam-platform/pkg/database"
 	"eiam-platform/pkg/i18n"
 	"eiam-platform/pkg/logger"
+	"eiam-platform/pkg/redis"
+	"eiam-platform/pkg/session"
 	"eiam-platform/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +35,21 @@ type LoginResponse struct {
 	ExpiresIn    int64    `json:"expires_in"`
 	User         UserInfo `json:"user"`
 	RequireOTP   bool     `json:"require_otp"`
+	SessionID    string   `json:"session_id"` // 添加会话ID
+}
+
+// 全局会话管理器实例
+var sessionManager *session.SessionManager
+
+// InitSessionManager 初始化会话管理器
+func InitSessionManager() {
+	redisClient := redis.RDB
+	sessionManager = session.NewSessionManager(redisClient, logger.GetLogger())
+}
+
+// GetSessionManager 获取会话管理器实例
+func GetSessionManager() *session.SessionManager {
+	return sessionManager
 }
 
 // UserInfo 用户信息
@@ -48,6 +67,8 @@ type UserInfo struct {
 	LastLoginIP    string                  `json:"last_login_ip"`
 	OrganizationID string                  `json:"organization_id"`
 	Organization   *OrganizationSimpleInfo `json:"organization,omitempty"`
+	Roles          []string                `json:"roles,omitempty"`
+	Permissions    []string                `json:"permissions,omitempty"`
 }
 
 // OrganizationSimpleInfo 组织简要信息
@@ -298,10 +319,50 @@ func LoginHandler(c *gin.Context) {
 	}
 	database.DB.Create(&loginLog)
 
+	// 创建Redis会话
+	var sessionID string
+	logger.AccessInfo("Session manager status",
+		zap.Bool("session_manager_initialized", sessionManager != nil),
+		zap.String("username", user.Username),
+	)
+	
+	if sessionManager != nil {
+		ctx := context.Background()
+		sessionID, err = sessionManager.CreateSession(
+			ctx,
+			user.ID,
+			user.Username,
+			user.Email,
+			user.DisplayName,
+			c.ClientIP(),
+			c.GetHeader("User-Agent"),
+			"", // tokenID将在后续设置
+			time.Duration(cfg.JWT.AccessTokenExpire)*time.Second,
+		)
+		if err != nil {
+			logger.ErrorError("Failed to create session",
+				zap.String("ip", c.ClientIP()),
+				zap.String("username", user.Username),
+				zap.Error(err),
+			)
+			// 会话创建失败不应该影响登录流程，只记录错误
+		} else {
+			logger.AccessInfo("Session created successfully",
+				zap.String("session_id", sessionID),
+				zap.String("username", user.Username),
+			)
+		}
+	} else {
+		logger.ErrorError("Session manager is nil",
+			zap.String("username", user.Username),
+		)
+	}
+
 	logger.AccessInfo("Login successful",
 		zap.String("ip", c.ClientIP()),
 		zap.String("username", user.Username),
 		zap.String("user_id", user.ID),
+		zap.String("session_id", sessionID),
 	)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -313,6 +374,7 @@ func LoginHandler(c *gin.Context) {
 			TokenType:    "Bearer",
 			ExpiresIn:    int64(cfg.JWT.AccessTokenExpire),
 			RequireOTP:   false,
+			SessionID:    sessionID,
 			User: UserInfo{
 				ID:            user.ID,
 				Username:      user.Username,
@@ -329,6 +391,291 @@ func LoginHandler(c *gin.Context) {
 		},
 	})
 }
+
+// LogoutHandler 登出处理器
+func LogoutHandler(c *gin.Context) {
+	// 从请求头获取token
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Authorization header required",
+			"data":    nil,
+		})
+		return
+	}
+
+	tokenString := utils.ExtractTokenFromHeader(authHeader)
+	if tokenString == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid token format",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 解析token获取用户信息
+	cfg := config.GetConfig()
+	jwtManager := utils.NewJWTManager(&cfg.JWT)
+	claims, err := jwtManager.ValidateAccessToken(tokenString)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid token",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 将token加入黑名单
+	if sessionManager != nil && claims.TradeID != "" {
+		ctx := context.Background()
+		// 计算token剩余有效期
+		expireDuration := time.Until(claims.ExpiresAt.Time)
+		if expireDuration > 0 {
+			err := sessionManager.BlacklistToken(ctx, claims.TradeID, expireDuration)
+			if err != nil {
+				logger.ErrorError("Failed to blacklist token",
+					zap.String("user_id", claims.UserID),
+					zap.String("trade_id", claims.TradeID),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+
+	// 删除特定会话（如果有session_id）
+	if sessionManager != nil && claims.SessionID != "" {
+		ctx := context.Background()
+		err := sessionManager.DeleteSession(ctx, claims.SessionID)
+		if err != nil {
+			logger.ErrorError("Failed to delete session",
+				zap.String("user_id", claims.UserID),
+				zap.String("session_id", claims.SessionID),
+				zap.Error(err),
+			)
+		}
+	}
+
+	logger.AccessInfo("User logged out",
+		zap.String("user_id", claims.UserID),
+		zap.String("username", claims.Username),
+		zap.String("ip", c.ClientIP()),
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Logout successful",
+		"data":    nil,
+	})
+}
+
+// ForceLogoutUserHandler 强制用户下线处理器
+func ForceLogoutUserHandler(c *gin.Context) {
+	userID := c.Param("userID")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "User ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	if sessionManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Session manager not initialized",
+			"data":    nil,
+		})
+		return
+	}
+
+	ctx := context.Background()
+	err := sessionManager.ForceLogoutUser(ctx, userID)
+	if err != nil {
+		logger.ErrorError("Failed to force logout user",
+			zap.String("user_id", userID),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to force logout user",
+			"data":    nil,
+		})
+		return
+	}
+
+	logger.AccessInfo("User forced logout by admin",
+		zap.String("user_id", userID),
+		zap.String("admin_ip", c.ClientIP()),
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "User forced logout successful",
+		"data":    nil,
+	})
+}
+
+// GetUserSessionsHandler 获取用户会话列表处理器
+func GetUserSessionsHandler(c *gin.Context) {
+	userID := c.Param("userID")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "User ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	if sessionManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Session manager not initialized",
+			"data":    nil,
+		})
+		return
+	}
+
+	ctx := context.Background()
+	sessions, err := sessionManager.GetUserSessions(ctx, userID)
+	if err != nil {
+		logger.ErrorError("Failed to get user sessions",
+			zap.String("user_id", userID),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to get user sessions",
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data":    sessions,
+	})
+}
+
+// GetAllSessionsHandler 获取所有在线会话处理器
+func GetAllSessionsHandler(c *gin.Context) {
+	if sessionManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Session manager not initialized",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 获取分页参数
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	userID := c.Query("user_id")
+	isActiveFilter := c.Query("is_active")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	ctx := context.Background()
+	
+	// 获取所有用户
+	var users []models.User
+	query := database.DB.Model(&models.User{})
+	if userID != "" {
+		query = query.Where("id = ?", userID)
+	}
+	if err := query.Find(&users).Error; err != nil {
+		logger.ErrorError("Failed to get users", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to get users",
+			"data":    nil,
+		})
+		return
+	}
+
+	var allSessions []map[string]interface{}
+	var total int64 = 0
+
+	// 获取每个用户的会话
+	for _, user := range users {
+		sessions, err := sessionManager.GetUserSessions(ctx, user.ID)
+		if err != nil {
+			logger.ErrorError("Failed to get user sessions",
+				zap.String("user_id", user.ID),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		for _, session := range sessions {
+			// 检查会话是否过期
+			isActive := time.Now().Before(session.ExpiresAt)
+			
+			// 过滤活跃状态
+			if isActiveFilter != "" {
+				isActiveBool, _ := strconv.ParseBool(isActiveFilter)
+				if isActive != isActiveBool {
+					continue
+				}
+			}
+
+			sessionData := map[string]interface{}{
+				"id":            session.SessionID,
+				"user_id":       user.ID,
+				"username":      user.Username,
+				"session_id":    session.SessionID,
+				"login_ip":      session.LoginIP,
+				"user_agent":    session.UserAgent,
+				"device_type":   "Unknown", // SessionInfo中没有这个字段
+				"location":      "Unknown", // SessionInfo中没有这个字段
+				"login_time":    session.LoginTime,
+				"last_activity": session.LastActivity,
+				"expires_at":    session.ExpiresAt,
+				"is_active":     isActive,
+			}
+			allSessions = append(allSessions, sessionData)
+			total++
+		}
+	}
+
+	// 分页处理
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start >= len(allSessions) {
+		allSessions = []map[string]interface{}{}
+	} else if end > len(allSessions) {
+		allSessions = allSessions[start:]
+	} else {
+		allSessions = allSessions[start:end]
+	}
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data": gin.H{
+			"items":       allSessions,
+			"total":       total,
+			"page":        page,
+			"page_size":   pageSize,
+			"total_pages": totalPages,
+		},
+	})
+}
+
+
 
 // RefreshTokenHandler 刷新令牌处理器
 func RefreshTokenHandler(c *gin.Context) {
@@ -417,33 +764,5 @@ func RefreshTokenHandler(c *gin.Context) {
 			TokenType:    "Bearer",
 			ExpiresIn:    int64(cfg.JWT.AccessTokenExpire),
 		},
-	})
-}
-
-// LogoutHandler 登出处理器
-func LogoutHandler(c *gin.Context) {
-	// 获取当前用户ID
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": i18n.Unauthorized,
-			"data":    nil,
-		})
-		return
-	}
-
-	// TODO: 将令牌加入黑名单或删除会话
-	// 这里可以记录登出日志
-
-	logger.AccessInfo("Logout successful",
-		zap.String("ip", c.ClientIP()),
-		zap.String("user_id", userID.(string)),
-	)
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    200,
-		"message": i18n.LogoutSuccess,
-		"data":    nil,
 	})
 }

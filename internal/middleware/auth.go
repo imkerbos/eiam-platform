@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 
 	"eiam-platform/pkg/i18n"
 	"eiam-platform/pkg/logger"
+	"eiam-platform/pkg/session"
 	"eiam-platform/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +14,7 @@ import (
 )
 
 // AuthMiddleware JWT authentication middleware
-func AuthMiddleware(jwtManager *utils.JWTManager) gin.HandlerFunc {
+func AuthMiddleware(jwtManager *utils.JWTManager, sessionManager *session.SessionManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -48,6 +50,42 @@ func AuthMiddleware(jwtManager *utils.JWTManager) gin.HandlerFunc {
 			})
 			c.Abort()
 			return
+		}
+
+		// 检查token是否在黑名单中
+		if sessionManager != nil && claims.TradeID != "" {
+			ctx := context.Background()
+			if sessionManager.IsTokenBlacklisted(ctx, claims.TradeID) {
+				logger.Warn("Token is blacklisted",
+					zap.String("user_id", claims.UserID),
+					zap.String("username", claims.Username),
+					zap.String("trade_id", claims.TradeID),
+				)
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":    401,
+					"message": "Token has been revoked",
+				})
+				c.Abort()
+				return
+			}
+		}
+
+		// 验证会话是否有效（如果启用了会话管理且有session_id）
+		if sessionManager != nil && claims.SessionID != "" {
+			ctx := context.Background()
+			if !sessionManager.IsSessionValid(ctx, claims.SessionID) {
+				logger.Warn("Session is invalid",
+					zap.String("user_id", claims.UserID),
+					zap.String("username", claims.Username),
+					zap.String("session_id", claims.SessionID),
+				)
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":    401,
+					"message": "Session expired",
+				})
+				c.Abort()
+				return
+			}
 		}
 
 		// Store user information in context
@@ -113,7 +151,7 @@ func RoleMiddleware(requiredRoles ...string) gin.HandlerFunc {
 		hasRequiredRole := false
 		for _, requiredRole := range requiredRoles {
 			for _, userRole := range userRoles {
-				if userRole == requiredRole || userRole == "admin" { // admin role has all permissions
+				if userRole == requiredRole || userRole == "admin" || userRole == "SYSTEM_ADMIN" { // admin roles have all permissions
 					hasRequiredRole = true
 					break
 				}

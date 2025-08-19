@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"eiam-platform/config"
+	"eiam-platform/internal/handlers"
 	"eiam-platform/internal/router"
 	"eiam-platform/pkg/database"
 	"eiam-platform/pkg/logger"
@@ -45,6 +46,9 @@ func main() {
 
 	// Initialize JWT manager
 	jwtManager := utils.NewJWTManager(&cfg.JWT)
+
+	// Initialize session manager
+	handlers.InitSessionManager()
 
 	// Setup router
 	r := router.SetupRouter(cfg, jwtManager)

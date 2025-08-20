@@ -168,8 +168,9 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { systemApi } from '@/api/system'
+import type { AdministratorInfo, RoleInfo } from '@/api/system'
 import { useSiteStore } from '@/stores/site'
 
 // Data
@@ -179,29 +180,9 @@ const adminModalVisible = ref(false)
 const siteStore = useSiteStore()
 const editingAdmin = ref(false)
 
-// Mock data
-const administrators = ref([
-  {
-    id: '1',
-    username: 'admin',
-    displayName: 'Administrator',
-    email: 'admin@example.com',
-    role: 'super_admin',
-    status: 'active',
-    lastLogin: '2024-01-01 10:00:00',
-    created_at: '2024-01-01'
-  },
-  {
-    id: '2',
-    username: 'security_admin',
-    displayName: 'Security Admin',
-    email: 'security@example.com',
-    role: 'security_admin',
-    status: 'active',
-    lastLogin: '2024-01-01 09:30:00',
-    created_at: '2024-01-01'
-  }
-])
+const administrators = ref<AdministratorInfo[]>([])
+const roles = ref<RoleInfo[]>([])
+const loading = ref(false)
 
 const users = ref([
   { id: '1', username: 'admin', display_name: 'Administrator' },
@@ -212,11 +193,11 @@ const users = ref([
 // Table columns
 const adminColumns = [
   { title: 'Username', dataIndex: 'username', key: 'username' },
-  { title: 'Display Name', dataIndex: 'displayName', key: 'displayName' },
+  { title: 'Display Name', dataIndex: 'display_name', key: 'display_name' },
   { title: 'Email', dataIndex: 'email', key: 'email' },
   { title: 'Role', dataIndex: 'role', key: 'role' },
   { title: 'Status', dataIndex: 'status', key: 'status' },
-  { title: 'Last Login', dataIndex: 'lastLogin', key: 'lastLogin' },
+  { title: 'Created At', dataIndex: 'created_at', key: 'created_at' },
   { title: 'Actions', key: 'actions' }
 ]
 
@@ -293,6 +274,14 @@ const securityRules = {
 const loadData = async () => {
   loading.value = true
   try {
+    // Load administrators
+    const adminResponse = await systemApi.getAdministrators({ page: 1, page_size: 100 })
+    administrators.value = adminResponse.data.items
+    
+    // Load roles
+    const rolesResponse = await systemApi.getRoles({ page: 1, page_size: 100 })
+    roles.value = rolesResponse.data.items
+    
     // Load site settings
     const siteSettings = await systemApi.getSiteSettings()
     Object.assign(siteForm, {
@@ -334,7 +323,8 @@ const loadData = async () => {
       notifyPasswordChanges: securitySettings.notify_password_changes
     })
   } catch (error) {
-    message.error('Failed to load system settings')
+    console.error('Failed to load data:', error)
+    message.error('Failed to load data')
   } finally {
     loading.value = false
   }
@@ -342,9 +332,9 @@ const loadData = async () => {
 
 const getRoleColor = (role: string) => {
   const colors = {
-    super_admin: 'red',
-    system_admin: 'blue',
-    security_admin: 'orange'
+    'SYSTEM_ADMIN': 'red',
+    'system_admin': 'blue',
+    'security_admin': 'orange'
   }
   return colors[role as keyof typeof colors] || 'default'
 }
@@ -354,7 +344,7 @@ const showAdminModal = () => {
   editingAdmin.value = false
   Object.assign(adminForm, {
     userId: '',
-    role: 'system_admin',
+    role: roles.value.length > 0 ? roles.value[0].id : '',
     status: 'active'
   })
   adminModalVisible.value = true
@@ -368,12 +358,15 @@ const editAdmin = (admin: any) => {
 
 const handleAdminSubmit = async () => {
   try {
-    // TODO: Implement API call
-    message.success(editingAdmin.value ? 'Administrator updated successfully' : 'Administrator added successfully')
+    await systemApi.assignAdministratorRole({
+      user_id: adminForm.userId,
+      role_id: adminForm.role
+    })
+    message.success('Administrator role assigned successfully')
     adminModalVisible.value = false
     loadData()
-  } catch (error) {
-    message.error('Failed to save administrator')
+  } catch (error: any) {
+    message.error(error.response?.data?.message || 'Failed to assign administrator role')
   }
 }
 
@@ -381,13 +374,13 @@ const handleAdminCancel = () => {
   adminModalVisible.value = false
 }
 
-const removeAdmin = async (id: string) => {
+const removeAdmin = async (admin: AdministratorInfo) => {
   try {
-    // TODO: Implement API call
-    message.success('Administrator removed successfully')
+    await systemApi.removeAdministratorRole(admin.id, admin.role_code)
+    message.success('Administrator role removed successfully')
     loadData()
-  } catch (error) {
-    message.error('Failed to remove administrator')
+  } catch (error: any) {
+    message.error(error.response?.data?.message || 'Failed to remove administrator role')
   }
 }
 

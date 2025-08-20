@@ -44,24 +44,52 @@
 
       <a-row :gutter="16">
         <a-col :span="12">
-          <a-card title="Recent Activities" :bordered="false">
-            <a-list :data-source="recentActivities" size="small">
-              <template #renderItem="{ item }">
+          <a-card title="Top 10 Login Users" :bordered="false">
+            <a-list :data-source="topLoginUsers" size="small">
+              <template #renderItem="{ item, index }">
                 <a-list-item>
                   <a-list-item-meta
-                    :title="item.title"
-                    :description="item.description"
+                    :title="item.username"
+                    :description="item.last_login_time"
                   >
                     <template #avatar>
-                      <a-avatar :icon="item.icon" />
+                      <a-avatar :style="{ backgroundColor: getRankColor(index + 1) }">
+                        {{ index + 1 }}
+                      </a-avatar>
                     </template>
                   </a-list-item-meta>
-                  <div class="activity-time">{{ item.time }}</div>
+                  <div class="login-count">{{ item.login_count }} logins</div>
                 </a-list-item>
               </template>
             </a-list>
           </a-card>
         </a-col>
+        <a-col :span="12">
+          <a-card title="Top 10 Login Applications" :bordered="false">
+            <a-list :data-source="topLoginApplications" size="small">
+              <template #renderItem="{ item, index }">
+                <a-list-item>
+                  <a-list-item-meta
+                    :title="item.name"
+                    :description="item.description"
+                  >
+                    <template #avatar>
+                      <a-avatar :style="{ backgroundColor: getRankColor(index + 1) }">
+                        {{ index + 1 }}
+                      </a-avatar>
+                    </template>
+                  </a-list-item-meta>
+                  <div class="login-count">{{ item.access_count }} accesses</div>
+                </a-list-item>
+              </template>
+            </a-list>
+          </a-card>
+        </a-col>
+      </a-row>
+
+      <!-- System Status and Debug section -->
+      <a-divider />
+      <a-row :gutter="16">
         <a-col :span="12">
           <a-card title="System Status" :bordered="false">
             <a-list :data-source="systemStatus" size="small">
@@ -78,21 +106,20 @@
             </a-list>
           </a-card>
         </a-col>
+        <a-col :span="12">
+          <a-card title="Debug Info" :bordered="false">
+            <a-space>
+              <a-button @click="checkToken">Check Token</a-button>
+              <a-button @click="clearToken">Clear Token</a-button>
+              <a-button @click="testAPI">Test API</a-button>
+              <a-button @click="testDashboardAPI">Test Dashboard API</a-button>
+            </a-space>
+            <div v-if="debugInfo" style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
+              <pre>{{ debugInfo }}</pre>
+            </div>
+          </a-card>
+        </a-col>
       </a-row>
-
-      <!-- Debug section -->
-      <a-divider />
-      <a-card title="Debug Info" :bordered="false">
-        <a-space>
-          <a-button @click="checkToken">Check Token</a-button>
-          <a-button @click="clearToken">Clear Token</a-button>
-          <a-button @click="testAPI">Test API</a-button>
-          <a-button @click="testDashboardAPI">Test Dashboard API</a-button>
-        </a-space>
-        <div v-if="debugInfo" style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
-          <pre>{{ debugInfo }}</pre>
-        </div>
-      </a-card>
     </a-card>
   </div>
 </template>
@@ -107,7 +134,7 @@ import {
   AppstoreOutlined
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { getDashboardData } from '@/api/system'
+import { systemApi } from '@/api/system'
 
 const userStore = useUserStore()
 const debugInfo = ref('')
@@ -120,18 +147,59 @@ const stats = reactive({
   totalApplications: 0
 })
 
-const recentActivities = ref([
+const topLoginUsers = ref([
   {
-    title: 'User Login',
-    description: 'Admin user logged in',
-    icon: 'user',
-    time: '2 minutes ago'
+    username: 'admin',
+    last_login_time: '2 minutes ago',
+    login_count: 15
   },
   {
-    title: 'Organization Created',
-    description: 'New organization "Test Branch" created',
-    icon: 'team',
-    time: '1 hour ago'
+    username: 'user1',
+    last_login_time: '5 minutes ago',
+    login_count: 12
+  },
+  {
+    username: 'user2',
+    last_login_time: '10 minutes ago',
+    login_count: 8
+  },
+  {
+    username: 'user3',
+    last_login_time: '15 minutes ago',
+    login_count: 6
+  },
+  {
+    username: 'user4',
+    last_login_time: '20 minutes ago',
+    login_count: 5
+  }
+])
+
+const topLoginApplications = ref([
+  {
+    name: 'HR System',
+    description: 'Human Resources Management',
+    access_count: 25
+  },
+  {
+    name: 'CRM System',
+    description: 'Customer Relationship Management',
+    access_count: 18
+  },
+  {
+    name: 'Email System',
+    description: 'Corporate Email System',
+    access_count: 12
+  },
+  {
+    name: 'File Manager',
+    description: 'Document Management System',
+    access_count: 8
+  },
+  {
+    name: 'Project Tracker',
+    description: 'Project Management Tool',
+    access_count: 6
   }
 ])
 
@@ -189,31 +257,43 @@ const testAPI = async () => {
 
 const testDashboardAPI = async () => {
   try {
-    const response = await getDashboardData()
+    const response = await systemApi.getDashboardData()
     debugInfo.value = JSON.stringify(response, null, 2)
   } catch (error: any) {
     debugInfo.value = JSON.stringify({ error: error.message }, null, 2)
   }
 }
 
+// Get rank color based on position
+const getRankColor = (rank: number) => {
+  const colors = ['#f5222d', '#fa8c16', '#faad14', '#52c41a', '#1890ff', '#722ed1', '#eb2f96', '#13c2c2', '#52c41a', '#faad14']
+  return colors[rank - 1] || '#d9d9d9'
+}
+
 onMounted(async () => {
   try {
     // Load dashboard data from API
-    const dashboardData = await getDashboardData()
+    const dashboardData = await systemApi.getDashboardData()
     
     // Update stats
     Object.assign(stats, dashboardData.stats)
     
-    // Update recent activities
-    recentActivities.value = dashboardData.recentActivities.map(activity => ({
-      title: activity.title,
-      description: activity.description,
-      icon: activity.icon,
-      time: activity.time
-    }))
-    
     // Update system status
     systemStatus.value = dashboardData.systemStatus
+    
+    // Load top login users and applications from API
+    try {
+      const [topUsers, topApps] = await Promise.all([
+        systemApi.getTopLoginUsers(),
+        systemApi.getTopLoginApplications()
+      ])
+      
+      topLoginUsers.value = topUsers || []
+      topLoginApplications.value = topApps || []
+    } catch (error) {
+      console.error('Failed to load top users/applications:', error)
+      // Keep demo data if API fails
+    }
   } catch (error: any) {
     console.error('Failed to load dashboard data:', error)
     message.error('Failed to load dashboard data')
@@ -241,5 +321,11 @@ onMounted(async () => {
 .activity-time {
   color: #999;
   font-size: 12px;
+}
+
+.login-count {
+  color: #1890ff;
+  font-size: 12px;
+  font-weight: 500;
 }
 </style>

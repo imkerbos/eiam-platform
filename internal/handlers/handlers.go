@@ -1025,20 +1025,560 @@ func GetUserApplicationHandler(c *gin.Context) {
 // Organization management handlers - 实现在 organization.go 中
 
 // Role management handlers
+// RoleInfo 角色信息
+type RoleInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Code        string `json:"code"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	IsSystem    bool   `json:"is_system"`
+	Scope       string `json:"scope"`
+	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// RoleListResponse 角色列表响应
+type RoleListResponse struct {
+	Items      []RoleInfo `json:"items"`
+	Total      int64      `json:"total"`
+	Page       int        `json:"page"`
+	PageSize   int        `json:"page_size"`
+	TotalPages int        `json:"total_pages"`
+}
+
+// CreateRoleRequest 创建角色请求
+type CreateRoleRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Code        string `json:"code" binding:"required"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Scope       string `json:"scope"`
+}
+
+// UpdateRoleRequest 更新角色请求
+type UpdateRoleRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Scope       string `json:"scope"`
+	Status      string `json:"status"`
+}
+
 func GetRolesHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	search := c.Query("search")
+	status := c.Query("status")
+	typeFilter := c.Query("type")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	query := database.DB.Model(&models.Role{})
+
+	// 搜索过滤
+	if search != "" {
+		query = query.Where("name LIKE ? OR code LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%")
+	}
+
+	// 状态过滤
+	if status != "" {
+		statusInt, err := strconv.Atoi(status)
+		if err == nil {
+			query = query.Where("status = ?", statusInt)
+		}
+	}
+
+	// 类型过滤
+	if typeFilter != "" {
+		query = query.Where("type = ?", typeFilter)
+	}
+
+	// 获取总数
+	var total int64
+	query.Count(&total)
+
+	// 计算总页数
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	// 分页查询
+	offset := (page - 1) * pageSize
+	var roles []models.Role
+	err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&roles).Error
+	if err != nil {
+		logger.ErrorError("Failed to get roles", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 转换为响应格式
+	items := make([]RoleInfo, len(roles))
+	for i, role := range roles {
+		items[i] = RoleInfo{
+			ID:          role.ID,
+			Name:        role.Name,
+			Code:        role.Code,
+			Description: role.Description,
+			Type:        role.Type,
+			IsSystem:    role.IsSystem,
+			Scope:       role.Scope,
+			Status:      role.Status.String(),
+			CreatedAt:   role.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:   role.UpdatedAt.Format("2006-01-02 15:04:05"),
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": i18n.Success,
+		"data": RoleListResponse{
+			Items:      items,
+			Total:      total,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+		},
+	})
 }
 
 func CreateRoleHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	var req CreateRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查角色代码是否已存在
+	var existingRole models.Role
+	if err := database.DB.Where("code = ?", req.Code).First(&existingRole).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Role code already exists",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 创建角色
+	role := models.Role{
+		Name:        req.Name,
+		Code:        req.Code,
+		Description: req.Description,
+		Type:        req.Type,
+		Scope:       req.Scope,
+		Status:      models.StatusActive,
+	}
+
+	if err := database.DB.Create(&role).Error; err != nil {
+		logger.ErrorError("Failed to create role", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Role created successfully",
+		"data":    role,
+	})
 }
 
 func UpdateRoleHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	roleID := c.Param("id")
+	if roleID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Role ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	var req UpdateRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 查找角色
+	var role models.Role
+	if err := database.DB.Where("id = ?", roleID).First(&role).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Role not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 更新角色
+	updates := make(map[string]interface{})
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.Description != "" {
+		updates["description"] = req.Description
+	}
+	if req.Type != "" {
+		updates["type"] = req.Type
+	}
+	if req.Scope != "" {
+		updates["scope"] = req.Scope
+	}
+	if req.Status != "" {
+		statusInt, err := strconv.Atoi(req.Status)
+		if err == nil {
+			updates["status"] = statusInt
+		}
+	}
+	updates["updated_at"] = time.Now()
+
+	if err := database.DB.Model(&role).Updates(updates).Error; err != nil {
+		logger.ErrorError("Failed to update role", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Role updated successfully",
+		"data":    role,
+	})
 }
 
 func DeleteRoleHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	roleID := c.Param("id")
+	if roleID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Role ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 查找角色
+	var role models.Role
+	if err := database.DB.Where("id = ?", roleID).First(&role).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Role not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否为系统角色
+	if role.IsSystem {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Cannot delete system role",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否有用户使用此角色
+	var userCount int64
+	database.DB.Table("user_roles").Where("role_id = ?", roleID).Count(&userCount)
+	if userCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Cannot delete role that is assigned to users",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 软删除角色
+	if err := database.DB.Delete(&role).Error; err != nil {
+		logger.ErrorError("Failed to delete role", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Role deleted successfully",
+		"data":    nil,
+	})
+}
+
+// AdministratorInfo 管理员信息
+type AdministratorInfo struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	Role        string `json:"role"`
+	RoleCode    string `json:"role_code"`
+	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// AdministratorListResponse 管理员列表响应
+type AdministratorListResponse struct {
+	Items      []AdministratorInfo `json:"items"`
+	Total      int64               `json:"total"`
+	Page       int                 `json:"page"`
+	PageSize   int                 `json:"page_size"`
+	TotalPages int                 `json:"total_pages"`
+}
+
+// AssignRoleRequest 分配角色请求
+type AssignRoleRequest struct {
+	UserID string `json:"user_id" binding:"required"`
+	RoleID string `json:"role_id" binding:"required"`
+}
+
+// GetAdministratorsHandler 获取管理员列表
+func GetAdministratorsHandler(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	// 查询有管理员角色的用户
+	query := `
+		SELECT DISTINCT 
+			u.id,
+			u.username,
+			u.display_name,
+			u.email,
+			u.status,
+			u.created_at,
+			r.name as role_name,
+			r.code as role_code
+		FROM users u
+		JOIN user_roles ur ON u.id = ur.user_id
+		JOIN roles r ON ur.role_id = r.id
+		WHERE r.code LIKE '%ADMIN%' AND u.deleted_at IS NULL
+		ORDER BY u.created_at DESC
+	`
+
+	rows, err := database.DB.Raw(query).Rows()
+	if err != nil {
+		logger.ErrorError("Failed to get administrators", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	var administrators []AdministratorInfo
+	for rows.Next() {
+		var admin AdministratorInfo
+		var createdAt time.Time
+		var statusInt int
+
+		err := rows.Scan(
+			&admin.ID,
+			&admin.Username,
+			&admin.DisplayName,
+			&admin.Email,
+			&statusInt,
+			&createdAt,
+			&admin.Role,
+			&admin.RoleCode,
+		)
+		if err != nil {
+			logger.ErrorError("Failed to scan administrator row", zap.Error(err))
+			continue
+		}
+
+		admin.Status = models.Status(statusInt).String()
+		admin.CreatedAt = createdAt.Format("2006-01-02 15:04:05")
+		administrators = append(administrators, admin)
+	}
+
+	// 手动分页
+	total := int64(len(administrators))
+	start := (page - 1) * pageSize
+	end := start + pageSize
+
+	if start >= len(administrators) {
+		administrators = []AdministratorInfo{}
+	} else if end > len(administrators) {
+		administrators = administrators[start:]
+	} else {
+		administrators = administrators[start:end]
+	}
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": i18n.Success,
+		"data": AdministratorListResponse{
+			Items:      administrators,
+			Total:      total,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+		},
+	})
+}
+
+// AssignAdministratorRoleHandler 分配管理员角色
+func AssignAdministratorRoleHandler(c *gin.Context) {
+	var req AssignRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查用户是否存在
+	var user models.User
+	if err := database.DB.Where("id = ?", req.UserID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "User not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查角色是否存在
+	var role models.Role
+	if err := database.DB.Where("id = ?", req.RoleID).First(&role).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Role not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否已经分配了该角色
+	var existingUserRole int64
+	database.DB.Table("user_roles").Where("user_id = ? AND role_id = ?", req.UserID, req.RoleID).Count(&existingUserRole)
+	if existingUserRole > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "User already has this role",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 分配角色
+	userRole := struct {
+		UserID string `gorm:"column:user_id"`
+		RoleID string `gorm:"column:role_id"`
+	}{
+		UserID: req.UserID,
+		RoleID: req.RoleID,
+	}
+
+	if err := database.DB.Table("user_roles").Create(&userRole).Error; err != nil {
+		logger.ErrorError("Failed to assign role to user", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Administrator role assigned successfully",
+		"data":    nil,
+	})
+}
+
+// RemoveAdministratorRoleHandler 移除管理员角色
+func RemoveAdministratorRoleHandler(c *gin.Context) {
+	userID := c.Param("userID")
+	roleID := c.Param("roleID")
+
+	if userID == "" || roleID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "User ID and Role ID are required",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否为系统管理员角色
+	var role models.Role
+	if err := database.DB.Where("id = ?", roleID).First(&role).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Role not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 不允许移除系统管理员角色
+	if role.IsSystem && role.Code == "SYSTEM_ADMIN" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Cannot remove system administrator role",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 移除角色
+	if err := database.DB.Table("user_roles").Where("user_id = ? AND role_id = ?", userID, roleID).Delete(&struct{}{}).Error; err != nil {
+		logger.ErrorError("Failed to remove role from user", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Administrator role removed successfully",
+		"data":    nil,
+	})
 }
 
 // Permission management handlers
@@ -1060,19 +1600,260 @@ func DeletePermissionHandler(c *gin.Context) {
 
 // Application management handlers
 func GetApplicationsHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	// 获取分页参数
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	search := c.Query("search")
+	groupID := c.Query("group_id")
+	appType := c.Query("type")
+	status := c.Query("status")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	// 构建查询
+	query := database.DB.Model(&models.Application{}).Preload("Group")
+
+	// 搜索条件
+	if search != "" {
+		query = query.Where("name LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+	if groupID != "" {
+		query = query.Where("group_id = ?", groupID)
+	}
+	if appType != "" {
+		query = query.Where("type = ?", appType)
+	}
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	// 获取总数
+	var total int64
+	query.Count(&total)
+
+	// 计算总页数
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	// 分页查询
+	offset := (page - 1) * pageSize
+	var applications []models.Application
+	err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&applications).Error
+	if err != nil {
+		logger.ErrorError("Failed to get applications", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to get applications",
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data": gin.H{
+			"items":       applications,
+			"total":       total,
+			"page":        page,
+			"page_size":   pageSize,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 func CreateApplicationHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	var req struct {
+		Name        string                 `json:"name" binding:"required"`
+		Type        string                 `json:"type" binding:"required"`
+		Description string                 `json:"description"`
+		GroupID     string                 `json:"groupId"`
+		Status      int                    `json:"status"`
+		HomepageURL string                 `json:"homepageUrl"`
+		LogoURL     string                 `json:"logoUrl"`
+		Config      map[string]interface{} `json:"config"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request data",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 验证应用组是否存在
+	if req.GroupID != "" {
+		var group models.ApplicationGroup
+		if err := database.DB.Where("id = ?", req.GroupID).First(&group).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Application group not found",
+				"data":    nil,
+			})
+			return
+		}
+	}
+
+	// 生成唯一的ClientID和ClientSecret
+	clientID := utils.GenerateTradeIDString("client")
+	clientSecret := utils.GenerateTradeIDString("secret")
+	appCode := utils.GenerateTradeIDString("app")
+	
+	application := models.Application{
+		BaseModel:   models.BaseModel{ID: utils.GenerateTradeIDString("app")},
+		Name:        req.Name,
+		Code:        appCode, // 使用生成的唯一code
+		Description: req.Description,
+		GroupID:     &req.GroupID,
+		ClientID:    clientID,
+		ClientSecret: clientSecret,
+		Status:      models.Status(req.Status),
+		HomePageURL: req.HomepageURL,
+		Logo:        req.LogoURL,
+		Protocol:    req.Type,
+		AppType:     "web", // 默认web类型
+	}
+
+	if err := database.DB.Create(&application).Error; err != nil {
+		logger.ErrorError("Failed to create application", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to create application",
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Application created successfully",
+		"data":    application,
+	})
 }
 
 func UpdateApplicationHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	appID := c.Param("id")
+	if appID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Application ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	var req struct {
+		Name        string                 `json:"name" binding:"required"`
+		Type        string                 `json:"type" binding:"required"`
+		Description string                 `json:"description"`
+		GroupID     string                 `json:"groupId"`
+		Status      int                    `json:"status"`
+		HomepageURL string                 `json:"homepageUrl"`
+		LogoURL     string                 `json:"logoUrl"`
+		Config      map[string]interface{} `json:"config"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request data",
+			"data":    nil,
+		})
+		return
+	}
+
+	var application models.Application
+	if err := database.DB.Where("id = ?", appID).First(&application).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Application not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 验证应用组是否存在
+	if req.GroupID != "" {
+		var group models.ApplicationGroup
+		if err := database.DB.Where("id = ?", req.GroupID).First(&group).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Application group not found",
+				"data":    nil,
+			})
+			return
+		}
+	}
+
+	// 更新字段
+	application.Name = req.Name
+	application.Code = req.Name // 使用name作为code
+	application.Description = req.Description
+	application.GroupID = &req.GroupID
+	application.Status = models.Status(req.Status)
+	application.HomePageURL = req.HomepageURL
+	application.Logo = req.LogoURL
+	application.Protocol = req.Type
+
+	if err := database.DB.Save(&application).Error; err != nil {
+		logger.ErrorError("Failed to update application", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to update application",
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Application updated successfully",
+		"data":    application,
+	})
 }
 
 func DeleteApplicationHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	appID := c.Param("id")
+	if appID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Application ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	var application models.Application
+	if err := database.DB.Where("id = ?", appID).First(&application).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Application not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	if err := database.DB.Delete(&application).Error; err != nil {
+		logger.ErrorError("Failed to delete application", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to delete application",
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Application deleted successfully",
+		"data":    nil,
+	})
 }
 
 // Application group management handlers
@@ -1158,6 +1939,7 @@ func CreateApplicationGroupHandler(c *gin.Context) {
 		Code:        req.Code,
 		Description: req.Description,
 		Icon:        req.Icon,
+		Color:       req.Color,
 		Sort:        req.Sort,
 		Status:      models.Status(req.Status),
 	}
@@ -1224,6 +2006,7 @@ func UpdateApplicationGroupHandler(c *gin.Context) {
 	group.Code = req.Code
 	group.Description = req.Description
 	group.Icon = req.Icon
+	group.Color = req.Color
 	group.Sort = req.Sort
 	group.Status = models.Status(req.Status)
 

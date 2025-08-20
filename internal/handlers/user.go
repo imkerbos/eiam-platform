@@ -96,7 +96,7 @@ func GetUsersHandler(c *gin.Context) {
 	// 分页查询
 	offset := (page - 1) * pageSize
 	var users []models.User
-	err := query.Preload("Organization").Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&users).Error
+	err := query.Preload("Organization").Preload("Roles").Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&users).Error
 	if err != nil {
 		logger.ErrorError("Failed to get users", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -134,6 +134,15 @@ func GetUsersHandler(c *gin.Context) {
 				Name: user.Organization.Name,
 				Code: user.Organization.Code,
 			}
+		}
+
+		// 添加角色信息
+		if len(user.Roles) > 0 {
+			roles := make([]string, len(user.Roles))
+			for j, role := range user.Roles {
+				roles[j] = role.Code
+			}
+			items[i].Roles = roles
 		}
 	}
 

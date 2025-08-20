@@ -10,6 +10,7 @@ type ApplicationGroup struct {
 	Description string `json:"description" gorm:"type:varchar(500)"`
 	Sort        int    `json:"sort" gorm:"default:0"`
 	Icon        string `json:"icon" gorm:"type:varchar(200)"`
+	Color       string `json:"color" gorm:"type:varchar(20);default:'#1890ff'"`
 	Status      Status `json:"status" gorm:"type:tinyint;default:1;index"`
 
 	// 关联关系

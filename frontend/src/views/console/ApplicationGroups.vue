@@ -107,6 +107,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
+import { applicationApi } from '@/api/applications'
 
 // Data
 const loading = ref(false)
@@ -192,43 +193,36 @@ const columns = [
 const loadGroups = async () => {
   try {
     loading.value = true
-    // TODO: Implement API call
-    // const response = await applicationGroupApi.getGroups({
-    //   page: pagination.current,
-    //   page_size: pagination.pageSize
-    // })
-    // groups.value = response.items
-    // pagination.total = response.total
-    // pagination.total_pages = response.total_pages
+    console.log('Loading application groups...')
+    const response = await applicationApi.getApplicationGroups({
+      page: pagination.current,
+      page_size: pagination.pageSize
+    })
+    console.log('API response:', response)
     
-    // Mock data
-    groups.value = [
-      {
-        id: '1',
-        name: 'Internal Tools',
-        code: 'internal',
-        description: 'Internal company tools and applications',
-        icon: 'tool',
-        color: '#1890ff',
-        sort: 1,
-        status: 1,
-        created_at: '2024-01-01T00:00:00Z'
-      },
-      {
-        id: '2',
-        name: 'External Services',
-        code: 'external',
-        description: 'External third-party services',
-        icon: 'cloud',
-        color: '#52c41a',
-        sort: 2,
-        status: 1,
-        created_at: '2024-01-01T00:00:00Z'
-      }
-    ]
-    pagination.total = 2
-  } catch (error) {
-    message.error('Failed to load application groups')
+    console.log('Response structure:', {
+      hasResponse: !!response,
+      hasData: !!(response && response.data),
+      hasItems: !!(response && response.data && response.data.items),
+      responseKeys: response ? Object.keys(response) : [],
+      dataKeys: response && response.data ? Object.keys(response.data) : []
+    })
+    
+    // 根据响应拦截器的处理，response应该是data.data
+    if (response && response.items) {
+      groups.value = response.items
+      pagination.total = response.total
+      pagination.total_pages = response.total_pages
+      console.log('Loaded groups:', groups.value.length)
+      console.log('First group:', groups.value[0])
+    } else {
+      console.error('Invalid response structure:', response)
+      message.error('Invalid response structure')
+    }
+  } catch (error: any) {
+    console.error('Failed to load application groups:', error)
+    console.error('Error details:', error.response?.data)
+    message.error(error.response?.data?.message || 'Failed to load application groups')
   } finally {
     loading.value = false
   }
@@ -281,20 +275,19 @@ const handleModalOk = async () => {
     
     if (editingGroup.value) {
       // Update group
-      // TODO: Implement API call
-      // await applicationGroupApi.updateGroup(editingGroup.value.id, formData)
+      await applicationApi.updateApplicationGroup(editingGroup.value.id, formData)
       message.success('Application group updated successfully')
     } else {
       // Create group
-      // TODO: Implement API call
-      // await applicationGroupApi.createGroup(formData)
+      await applicationApi.createApplicationGroup(formData)
       message.success('Application group created successfully')
     }
     
     modalVisible.value = false
     loadGroups()
-  } catch (error) {
-    message.error('Please check the form')
+  } catch (error: any) {
+    console.error('Failed to save application group:', error)
+    message.error(error.response?.data?.message || 'Failed to save application group')
   }
 }
 
@@ -305,17 +298,18 @@ const handleModalCancel = () => {
 
 const deleteGroup = async (groupId: string) => {
   try {
-    // TODO: Implement API call
-    // await applicationGroupApi.deleteGroup(groupId)
+    await applicationApi.deleteApplicationGroup(groupId)
     message.success('Application group deleted successfully')
     loadGroups()
-  } catch (error) {
-    message.error('Failed to delete application group')
+  } catch (error: any) {
+    console.error('Failed to delete application group:', error)
+    message.error(error.response?.data?.message || 'Failed to delete application group')
   }
 }
 
 // Lifecycle
 onMounted(() => {
+  console.log('ApplicationGroups component mounted')
   loadGroups()
 })
 </script>

@@ -144,6 +144,16 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		roles.DELETE("/:id", handlers.DeleteRoleHandler)
 	}
 
+	// 管理员管理（需要管理员权限）
+	administrators := console.Group("/administrators")
+	administrators.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	administrators.Use(middleware.AdminMiddleware())
+	{
+		administrators.GET("", handlers.GetAdministratorsHandler)
+		administrators.POST("/assign", handlers.AssignAdministratorRoleHandler)
+		administrators.DELETE("/:userID/:roleID", handlers.RemoveAdministratorRoleHandler)
+	}
+
 	// 权限管理（需要管理员权限）
 	permissions := console.Group("/permissions")
 	permissions.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
@@ -196,6 +206,8 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		systemAPI.GET("", handlers.GetDashboardData)
 		systemAPI.GET("/stats", handlers.GetSystemStats)
 		systemAPI.GET("/activities", handlers.GetRecentActivities)
+		systemAPI.GET("/top-users", handlers.GetTopLoginUsers)
+		systemAPI.GET("/top-applications", handlers.GetTopLoginApplications)
 	}
 
 	// 日志管理（需要管理员权限）

@@ -65,6 +65,36 @@ export interface SecuritySettings {
   lockout_duration: number
 }
 
+export interface AdministratorInfo {
+  id: string
+  username: string
+  display_name: string
+  email: string
+  role: string
+  role_code: string
+  status: string
+  created_at: string
+}
+
+export interface AdministratorListResponse extends PaginatedResponse<AdministratorInfo> {}
+
+export interface AssignRoleRequest {
+  user_id: string
+  role_id: string
+}
+
+export interface RoleInfo {
+  id: string
+  name: string
+  code: string
+  description: string
+  type: string
+  status: string
+  created_at: string
+}
+
+export interface RoleListResponse extends PaginatedResponse<RoleInfo> {}
+
 // System API methods
 export const systemApi = {
   // Get dashboard data
@@ -85,6 +115,67 @@ export const systemApi = {
   // Get recent activities
   getRecentActivities: (limit: number = 10) => {
     return http.get<RecentActivity[]>(`/console/dashboard/activities?limit=${limit}`)
+  },
+
+  // Get top login users
+  getTopLoginUsers: () => {
+    return http.get<any[]>('/console/dashboard/top-users')
+  },
+
+  // Get top login applications
+  getTopLoginApplications: () => {
+    return http.get<any[]>('/console/dashboard/top-applications')
+  },
+
+  // Get administrators
+  getAdministrators: (params: PaginationParams) => {
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', params.page.toString())
+    queryParams.append('page_size', params.page_size.toString())
+
+    return http.get<AdministratorListResponse>(`/console/administrators?${queryParams.toString()}`)
+  },
+
+  // Assign administrator role
+  assignAdministratorRole: (data: AssignRoleRequest) => {
+    return http.post('/console/administrators/assign', data)
+  },
+
+  // Remove administrator role
+  removeAdministratorRole: (userID: string, roleID: string) => {
+    return http.delete(`/console/administrators/${userID}/${roleID}`)
+  },
+
+  // Get roles
+  getRoles: (params: PaginationParams & {
+    search?: string
+    status?: string
+    type?: string
+  }) => {
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', params.page.toString())
+    queryParams.append('page_size', params.page_size.toString())
+
+    if (params.search) queryParams.append('search', params.search)
+    if (params.status) queryParams.append('status', params.status)
+    if (params.type) queryParams.append('type', params.type)
+
+    return http.get<RoleListResponse>(`/console/roles?${queryParams.toString()}`)
+  },
+
+  // Create role
+  createRole: (data: any) => {
+    return http.post('/console/roles', data)
+  },
+
+  // Update role
+  updateRole: (id: string, data: any) => {
+    return http.put(`/console/roles/${id}`, data)
+  },
+
+  // Delete role
+  deleteRole: (id: string) => {
+    return http.delete(`/console/roles/${id}`)
   },
 
   // Get system settings

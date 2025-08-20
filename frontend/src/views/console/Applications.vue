@@ -19,15 +19,21 @@
         row-key="id"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'type'">
-            <a-tag :color="getTypeColor(record.type)">
-              {{ record.type }}
+          <template v-if="column.key === 'protocol'">
+            <a-tag :color="getTypeColor(record.protocol)">
+              {{ record.protocol }}
             </a-tag>
           </template>
           <template v-else-if="column.key === 'status'">
-            <a-tag :color="record.status === 'active' ? 'green' : 'red'">
-              {{ record.status }}
+            <a-tag :color="record.status === 1 ? 'green' : 'red'">
+              {{ record.status === 1 ? 'Active' : 'Inactive' }}
             </a-tag>
+          </template>
+          <template v-else-if="column.key === 'group'">
+            {{ record.group?.name || '-' }}
+          </template>
+          <template v-else-if="column.key === 'created_at'">
+            {{ new Date(record.created_at).toLocaleDateString() }}
           </template>
           <template v-else-if="column.key === 'action'">
             <a-space>
@@ -73,10 +79,12 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="Type" name="type">
-              <a-select v-model:value="formData.type">
-                <a-select-option value="web">Web Application</a-select-option>
-                <a-select-option value="mobile">Mobile Application</a-select-option>
-                <a-select-option value="api">API Service</a-select-option>
+              <a-select v-model:value="formData.type" @change="onTypeChange">
+                <a-select-option value="oauth2">OAuth2</a-select-option>
+                <a-select-option value="saml">SAML</a-select-option>
+                <a-select-option value="cas">CAS</a-select-option>
+                <a-select-option value="oidc">OpenID Connect</a-select-option>
+                <a-select-option value="ldap">LDAP</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
@@ -109,6 +117,128 @@
         <a-form-item label="Logo URL" name="logoUrl">
           <a-input v-model:value="formData.logoUrl" />
         </a-form-item>
+        
+        <!-- Dynamic Configuration Fields based on Type -->
+        <a-divider>Configuration</a-divider>
+        
+        <!-- OAuth2 Configuration -->
+        <div v-if="formData.type === 'oauth2'">
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="Client ID" name="clientId">
+                <a-input v-model:value="formData.config.clientId" placeholder="Enter client ID" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="Client Secret" name="clientSecret">
+                <a-input-password v-model:value="formData.config.clientSecret" placeholder="Enter client secret" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="Redirect URIs" name="redirectUris">
+            <a-textarea v-model:value="formData.config.redirectUris" :rows="3" placeholder="Enter redirect URIs (one per line)" />
+          </a-form-item>
+          <a-form-item label="Scopes" name="scopes">
+            <a-select v-model:value="formData.config.scopes" mode="multiple" placeholder="Select scopes">
+              <a-select-option value="openid">openid</a-select-option>
+              <a-select-option value="profile">profile</a-select-option>
+              <a-select-option value="email">email</a-select-option>
+              <a-select-option value="read">read</a-select-option>
+              <a-select-option value="write">write</a-select-option>
+            </a-select>
+          </a-form-item>
+        </div>
+        
+        <!-- SAML Configuration -->
+        <div v-if="formData.type === 'saml'">
+          <a-form-item label="Entity ID" name="entityId">
+            <a-input v-model:value="formData.config.entityId" placeholder="Enter entity ID" />
+          </a-form-item>
+          <a-form-item label="ACS URL" name="acsUrl">
+            <a-input v-model:value="formData.config.acsUrl" placeholder="Enter ACS URL" />
+          </a-form-item>
+          <a-form-item label="SLO URL" name="sloUrl">
+            <a-input v-model:value="formData.config.sloUrl" placeholder="Enter SLO URL" />
+          </a-form-item>
+          <a-form-item label="Certificate" name="certificate">
+            <a-textarea v-model:value="formData.config.certificate" :rows="5" placeholder="Enter certificate" />
+          </a-form-item>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="Signature Algorithm" name="signatureAlgorithm">
+                <a-select v-model:value="formData.config.signatureAlgorithm">
+                  <a-select-option value="sha256">SHA-256</a-select-option>
+                  <a-select-option value="sha512">SHA-512</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="Digest Algorithm" name="digestAlgorithm">
+                <a-select v-model:value="formData.config.digestAlgorithm">
+                  <a-select-option value="sha256">SHA-256</a-select-option>
+                  <a-select-option value="sha512">SHA-512</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+        
+        <!-- CAS Configuration -->
+        <div v-if="formData.type === 'cas'">
+          <a-form-item label="Service URL" name="serviceUrl">
+            <a-input v-model:value="formData.config.serviceUrl" placeholder="Enter service URL" />
+          </a-form-item>
+          <a-form-item label="Gateway" name="gateway">
+            <a-switch v-model:checked="formData.config.gateway" />
+          </a-form-item>
+          <a-form-item label="Renew" name="renew">
+            <a-switch v-model:checked="formData.config.renew" />
+          </a-form-item>
+        </div>
+        
+        <!-- OpenID Connect Configuration -->
+        <div v-if="formData.type === 'oidc'">
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="Client ID" name="clientId">
+                <a-input v-model:value="formData.config.clientId" placeholder="Enter client ID" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="Client Secret" name="clientSecret">
+                <a-input-password v-model:value="formData.config.clientSecret" placeholder="Enter client secret" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="Redirect URIs" name="redirectUris">
+            <a-textarea v-model:value="formData.config.redirectUris" :rows="3" placeholder="Enter redirect URIs (one per line)" />
+          </a-form-item>
+          <a-form-item label="Scopes" name="scopes">
+            <a-select v-model:value="formData.config.scopes" mode="multiple" placeholder="Select scopes">
+              <a-select-option value="openid">openid</a-select-option>
+              <a-select-option value="profile">profile</a-select-option>
+              <a-select-option value="email">email</a-select-option>
+              <a-select-option value="address">address</a-select-option>
+              <a-select-option value="phone">phone</a-select-option>
+            </a-select>
+          </a-form-item>
+        </div>
+        
+        <!-- LDAP Configuration -->
+        <div v-if="formData.type === 'ldap'">
+          <a-form-item label="LDAP URL" name="ldapUrl">
+            <a-input v-model:value="formData.config.ldapUrl" placeholder="Enter LDAP URL" />
+          </a-form-item>
+          <a-form-item label="Base DN" name="baseDn">
+            <a-input v-model:value="formData.config.baseDn" placeholder="Enter base DN" />
+          </a-form-item>
+          <a-form-item label="Bind DN" name="bindDn">
+            <a-input v-model:value="formData.config.bindDn" placeholder="Enter bind DN" />
+          </a-form-item>
+          <a-form-item label="Bind Password" name="bindPassword">
+            <a-input-password v-model:value="formData.config.bindPassword" placeholder="Enter bind password" />
+          </a-form-item>
+        </div>
       </a-form>
     </a-modal>
 
@@ -199,10 +329,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import type { Application, Pagination } from '@/types/api'
+import { applicationApi } from '@/api/applications'
 
 // Data
 const loading = ref(false)
@@ -218,12 +349,35 @@ const currentApp = ref<Application | null>(null)
 
 const formData = reactive({
   name: '',
-  type: 'web',
+  type: 'oauth2',
   description: '',
   groupId: undefined,
   status: 'active',
   homepageUrl: '',
-  logoUrl: ''
+  logoUrl: '',
+  config: {
+    // OAuth2/OIDC fields
+    clientId: '',
+    clientSecret: '',
+    redirectUris: '',
+    scopes: [],
+    // SAML fields
+    entityId: '',
+    acsUrl: '',
+    sloUrl: '',
+    certificate: '',
+    signatureAlgorithm: 'sha256',
+    digestAlgorithm: 'sha256',
+    // CAS fields
+    serviceUrl: '',
+    gateway: false,
+    renew: false,
+    // LDAP fields
+    ldapUrl: '',
+    baseDn: '',
+    bindDn: '',
+    bindPassword: ''
+  }
 })
 
 const configData = reactive({
@@ -248,7 +402,25 @@ const configData = reactive({
 const formRules = {
   name: [{ required: true, message: 'Please input application name!' }],
   type: [{ required: true, message: 'Please select application type!' }],
-  status: [{ required: true, message: 'Please select status!' }]
+  status: [{ required: true, message: 'Please select status!' }],
+  // 配置字段验证规则
+  'config.clientId': [{ required: false }],
+  'config.clientSecret': [{ required: false }],
+  'config.redirectUris': [{ required: false }],
+  'config.scopes': [{ required: false }],
+  'config.entityId': [{ required: false }],
+  'config.acsUrl': [{ required: false }],
+  'config.sloUrl': [{ required: false }],
+  'config.certificate': [{ required: false }],
+  'config.signatureAlgorithm': [{ required: false }],
+  'config.digestAlgorithm': [{ required: false }],
+  'config.serviceUrl': [{ required: false }],
+  'config.gateway': [{ required: false }],
+  'config.renew': [{ required: false }],
+  'config.ldapUrl': [{ required: false }],
+  'config.baseDn': [{ required: false }],
+  'config.bindDn': [{ required: false }],
+  'config.bindPassword': [{ required: false }]
 }
 
 const pagination = reactive<Pagination>({
@@ -266,13 +438,13 @@ const columns = [
   },
   {
     title: 'Type',
-    dataIndex: 'type',
-    key: 'type'
+    dataIndex: 'protocol',
+    key: 'protocol'
   },
   {
     title: 'Group',
-    dataIndex: 'groupName',
-    key: 'groupName'
+    dataIndex: 'group',
+    key: 'group'
   },
   {
     title: 'Status',
@@ -281,13 +453,13 @@ const columns = [
   },
   {
     title: 'Homepage URL',
-    dataIndex: 'homepageUrl',
-    key: 'homepageUrl'
+    dataIndex: 'home_page_url',
+    key: 'home_page_url'
   },
   {
     title: 'Created At',
-    dataIndex: 'createdAt',
-    key: 'createdAt'
+    dataIndex: 'created_at',
+    key: 'created_at'
   },
   {
     title: 'Action',
@@ -299,31 +471,16 @@ const columns = [
 const loadApplications = async () => {
   loading.value = true
   try {
-    // Mock data for now
-    applications.value = [
-      {
-        id: '1',
-        name: 'HR System',
-        type: 'web',
-        groupName: 'Internal Apps',
-        status: 'active',
-        homepageUrl: 'https://hr.example.com',
-        createdAt: '2024-01-01T00:00:00Z'
-      },
-      {
-        id: '2',
-        name: 'CRM System',
-        type: 'web',
-        groupName: 'Business Apps',
-        status: 'active',
-        homepageUrl: 'https://crm.example.com',
-        createdAt: '2024-01-01T00:00:00Z'
-      }
-    ]
-    pagination.total = 2
-    pagination.total_pages = 1
-  } catch (error) {
-    message.error('Failed to load applications')
+    const response = await applicationApi.getApplications({
+      page: pagination.current,
+      page_size: pagination.pageSize
+    })
+    applications.value = response.items || []
+    pagination.total = response.total
+    pagination.total_pages = response.total_pages
+  } catch (error: any) {
+    console.error('Failed to load applications:', error)
+    message.error(error.response?.data?.message || 'Failed to load applications')
   } finally {
     loading.value = false
   }
@@ -331,14 +488,14 @@ const loadApplications = async () => {
 
 const loadAppGroups = async () => {
   try {
-    // Mock data for now
-    appGroups.value = [
-      { id: '1', name: 'Internal Apps' },
-      { id: '2', name: 'Business Apps' },
-      { id: '3', name: 'External Apps' }
-    ]
-  } catch (error) {
-    message.error('Failed to load application groups')
+    const response = await applicationApi.getApplicationGroups({
+      page: 1,
+      page_size: 100
+    })
+    appGroups.value = response.items || []
+  } catch (error: any) {
+    console.error('Failed to load application groups:', error)
+    message.error(error.response?.data?.message || 'Failed to load application groups')
   }
 }
 
@@ -350,9 +507,11 @@ const handleTableChange = (pag: any) => {
 
 const getTypeColor = (type: string) => {
   const colors = {
-    web: 'blue',
-    mobile: 'green',
-    api: 'orange'
+    oauth2: 'blue',
+    saml: 'green',
+    cas: 'orange',
+    oidc: 'purple',
+    ldap: 'cyan'
   }
   return colors[type as keyof typeof colors] || 'default'
 }
@@ -369,25 +528,67 @@ const editApp = (app: Application) => {
   editingApp.value = app
   Object.assign(formData, {
     name: app.name,
-    type: app.type,
+    type: app.protocol,
     description: app.description,
-    groupId: app.groupId,
-    status: app.status,
-    homepageUrl: app.homepageUrl,
-    logoUrl: app.logoUrl
+    groupId: app.group_id,
+    status: app.status === 1 ? 'active' : 'inactive',
+    homepageUrl: app.home_page_url,
+    logoUrl: app.logo
   })
   modalVisible.value = true
+}
+
+const onTypeChange = (type: string) => {
+  // Reset config when type changes
+  formData.config = {
+    clientId: '',
+    clientSecret: '',
+    redirectUris: '',
+    scopes: [],
+    entityId: '',
+    acsUrl: '',
+    sloUrl: '',
+    certificate: '',
+    signatureAlgorithm: 'sha256',
+    digestAlgorithm: 'sha256',
+    serviceUrl: '',
+    gateway: false,
+    renew: false,
+    ldapUrl: '',
+    baseDn: '',
+    bindDn: '',
+    bindPassword: ''
+  }
 }
 
 const resetForm = () => {
   Object.assign(formData, {
     name: '',
-    type: 'web',
+    type: 'oauth2',
     description: '',
     groupId: undefined,
     status: 'active',
     homepageUrl: '',
-    logoUrl: ''
+    logoUrl: '',
+    config: {
+      clientId: '',
+      clientSecret: '',
+      redirectUris: '',
+      scopes: [],
+      entityId: '',
+      acsUrl: '',
+      sloUrl: '',
+      certificate: '',
+      signatureAlgorithm: 'sha256',
+      digestAlgorithm: 'sha256',
+      serviceUrl: '',
+      gateway: false,
+      renew: false,
+      ldapUrl: '',
+      baseDn: '',
+      bindDn: '',
+      bindPassword: ''
+    }
   })
   formRef.value?.resetFields()
 }
@@ -395,8 +596,26 @@ const resetForm = () => {
 const handleModalOk = async () => {
   try {
     await formRef.value?.validate()
-    // TODO: Implement API call
-    message.success(editingApp.value ? 'Application updated successfully' : 'Application created successfully')
+    
+    const requestData = {
+      name: formData.name,
+      type: formData.type,
+      description: formData.description,
+      groupId: formData.groupId,
+      status: formData.status === 'active' ? 1 : 0,
+      homepageUrl: formData.homepageUrl,
+      logoUrl: formData.logoUrl,
+      config: formData.config
+    }
+    
+    if (editingApp.value) {
+      await applicationApi.updateApplication(editingApp.value.id, requestData)
+      message.success('Application updated successfully')
+    } else {
+      await applicationApi.createApplication(requestData)
+      message.success('Application created successfully')
+    }
+    
     modalVisible.value = false
     loadApplications()
   } catch (error) {
@@ -434,11 +653,12 @@ const handleConfigCancel = () => {
 
 const deleteApp = async (appId: string) => {
   try {
-    // TODO: Implement API call
+    await applicationApi.deleteApplication(appId)
     message.success('Application deleted successfully')
     loadApplications()
-  } catch (error) {
-    message.error('Failed to delete application')
+  } catch (error: any) {
+    console.error('Failed to delete application:', error)
+    message.error(error.response?.data?.message || 'Failed to delete application')
   }
 }
 

@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -441,11 +443,26 @@ func GetDashboardData(c *gin.Context) {
 	}
 	stats.TotalOrganizations = int(orgCount)
 
-	// Get application count (placeholder for now)
-	stats.TotalApplications = 0
+	// Get application count
+	var appCount int64
+	if err := database.DB.Model(&models.Application{}).Count(&appCount).Error; err != nil {
+		logger.ErrorError("Failed to count applications", zap.Error(err))
+	}
+	stats.TotalApplications = int(appCount)
 
-	// Get active sessions (placeholder for now)
-	stats.ActiveSessions = 1
+	// Get active sessions count from Redis
+	if sessionManager != nil {
+		ctx := context.Background()
+		activeSessionsCount, err := sessionManager.GetActiveSessionsCount(ctx)
+		if err != nil {
+			logger.ErrorError("Failed to get active sessions count", zap.Error(err))
+			stats.ActiveSessions = 0
+		} else {
+			stats.ActiveSessions = int(activeSessionsCount)
+		}
+	} else {
+		stats.ActiveSessions = 0
+	}
 
 	// Get recent login activities
 	var loginLogs []models.UserLoginLog
@@ -544,6 +561,162 @@ func GetDashboardData(c *gin.Context) {
 		"message": "Dashboard data retrieved successfully",
 		"data":    dashboardData,
 	})
+}
+
+// GetTopLoginUsers returns top 10 users by login count
+func GetTopLoginUsers(c *gin.Context) {
+	// 获取最近30天的登录统计
+	var topUsers []map[string]interface{}
+
+	// 使用原生SQL查询获取登录次数最多的用户
+	query := `
+		SELECT 
+			u.id,
+			u.username,
+			u.display_name,
+			u.email,
+			COUNT(ull.id) as login_count,
+			MAX(ull.created_at) as last_login_time
+		FROM users u
+		LEFT JOIN user_login_logs ull ON u.id = ull.user_id 
+			AND ull.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+			AND ull.success = 1
+		WHERE u.status = 1
+		GROUP BY u.id, u.username, u.display_name, u.email
+		ORDER BY login_count DESC, last_login_time DESC
+		LIMIT 10
+	`
+
+	rows, err := database.DB.Raw(query).Rows()
+	if err != nil {
+		logger.ErrorError("Failed to get top login users", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to get top login users",
+			"data":    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var user map[string]interface{}
+		var id, username, displayName, email string
+		var loginCount int
+		var lastLoginTime *time.Time
+
+		err := rows.Scan(&id, &username, &displayName, &email, &loginCount, &lastLoginTime)
+		if err != nil {
+			logger.ErrorError("Failed to scan user row", zap.Error(err))
+			continue
+		}
+
+		user = map[string]interface{}{
+			"id":              id,
+			"username":        username,
+			"display_name":    displayName,
+			"email":           email,
+			"login_count":     loginCount,
+			"last_login_time": formatTimeAgo(lastLoginTime),
+		}
+
+		topUsers = append(topUsers, user)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Top login users retrieved successfully",
+		"data":    topUsers,
+	})
+}
+
+// GetTopLoginApplications returns top 10 applications by access count
+func GetTopLoginApplications(c *gin.Context) {
+	// 获取最近30天的应用访问统计
+	var topApplications []map[string]interface{}
+
+	// 使用原生SQL查询获取访问次数最多的应用
+	query := `
+		SELECT 
+			a.id,
+			a.name,
+			a.description,
+			ag.name as group_name,
+			COUNT(DISTINCT ua.user_id) as access_count,
+			NULL as last_access_time
+		FROM applications a
+		LEFT JOIN application_groups ag ON a.group_id = ag.id
+		LEFT JOIN user_applications ua ON a.id = ua.application_id
+		WHERE a.status = 1
+		GROUP BY a.id, a.name, a.description, ag.name
+		ORDER BY access_count DESC
+		LIMIT 10
+	`
+
+	rows, err := database.DB.Raw(query).Rows()
+	if err != nil {
+		logger.ErrorError("Failed to get top login applications", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to get top login applications",
+			"data":    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var app map[string]interface{}
+		var id, name, description, groupName string
+		var accessCount int
+		var lastAccessTime *time.Time
+
+		err := rows.Scan(&id, &name, &description, &groupName, &accessCount, &lastAccessTime)
+		if err != nil {
+			logger.ErrorError("Failed to scan application row", zap.Error(err))
+			continue
+		}
+
+		app = map[string]interface{}{
+			"id":               id,
+			"name":             name,
+			"description":      description,
+			"group_name":       groupName,
+			"access_count":     accessCount,
+			"last_access_time": formatTimeAgo(lastAccessTime),
+		}
+
+		topApplications = append(topApplications, app)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Top login applications retrieved successfully",
+		"data":    topApplications,
+	})
+}
+
+// formatTimeAgo formats time to "X minutes/hours/days ago"
+func formatTimeAgo(t *time.Time) string {
+	if t == nil {
+		return "Never"
+	}
+
+	now := time.Now()
+	diff := now.Sub(*t)
+
+	if diff < time.Minute {
+		return "Just now"
+	} else if diff < time.Hour {
+		minutes := int(diff.Minutes())
+		return fmt.Sprintf("%d minutes ago", minutes)
+	} else if diff < 24*time.Hour {
+		hours := int(diff.Hours())
+		return fmt.Sprintf("%d hours ago", hours)
+	} else {
+		days := int(diff.Hours() / 24)
+		return fmt.Sprintf("%d days ago", days)
+	}
 }
 
 // GetSystemStats returns system statistics

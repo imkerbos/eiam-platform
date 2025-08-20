@@ -17,9 +17,15 @@ export interface Application {
 export interface ApplicationGroup {
   id: string
   name: string
+  code: string
   description: string
+  icon: string
   color: string
-  applications: Application[]
+  sort: number
+  status: number
+  created_at: string
+  updated_at: string
+  applications?: Application[]
 }
 
 export interface ApplicationListResponse extends PaginatedResponse<Application> {}
@@ -58,5 +64,35 @@ export const applicationApi = {
     queryParams.append('page_size', params.page_size.toString())
     
     return http.get<ApplicationGroupListResponse>(`/console/application-groups?${queryParams.toString()}`)
+  },
+
+  // Create application group
+  createApplicationGroup: (data: any) => {
+    return http.post('/console/application-groups', data)
+  },
+
+  // Update application group
+  updateApplicationGroup: (id: string, data: any) => {
+    return http.put(`/console/application-groups/${id}`, data)
+  },
+
+  // Delete application group
+  deleteApplicationGroup: (id: string) => {
+    return http.delete(`/console/application-groups/${id}`)
+  },
+
+  // Create application
+  createApplication: (data: any) => {
+    return http.post('/console/applications', data)
+  },
+
+  // Update application
+  updateApplication: (id: string, data: any) => {
+    return http.put(`/console/applications/${id}`, data)
+  },
+
+  // Delete application
+  deleteApplication: (id: string) => {
+    return http.delete(`/console/applications/${id}`)
   }
 }

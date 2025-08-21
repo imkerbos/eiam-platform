@@ -440,6 +440,9 @@ const updateProfile = async () => {
         })
       }
       
+      // 重新加载用户信息以确保数据同步
+      await loadProfile()
+      
       message.success('Profile updated successfully')
     } else {
       message.error(response.message || 'Failed to update profile')

@@ -30,7 +30,7 @@
                 </a-tag>
               </template>
               <template v-else-if="column.key === 'role'">
-                <a-tag :color="getRoleColor(record.role)">{{ record.role }}</a-tag>
+                <a-tag :color="getRoleColor(record.role_code)">{{ record.role_code }}</a-tag>
               </template>
               <template v-else-if="column.key === 'actions'">
                 <a-space>
@@ -149,9 +149,9 @@
         </a-form-item>
         <a-form-item label="Role" name="role">
           <a-select v-model:value="adminForm.role">
-            <a-select-option value="super_admin">Super Administrator</a-select-option>
-            <a-select-option value="system_admin">System Administrator</a-select-option>
-            <a-select-option value="security_admin">Security Administrator</a-select-option>
+            <a-select-option v-for="role in roles" :key="role.id" :value="role.id">
+              {{ role.name }} ({{ role.code }})
+            </a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="Status" name="status">
@@ -171,6 +171,7 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { systemApi } from '@/api/system'
 import type { AdministratorInfo, RoleInfo } from '@/api/system'
+import { userApi } from '@/api/users'
 import { useSiteStore } from '@/stores/site'
 
 // Data
@@ -182,20 +183,15 @@ const editingAdmin = ref(false)
 
 const administrators = ref<AdministratorInfo[]>([])
 const roles = ref<RoleInfo[]>([])
-const loading = ref(false)
 
-const users = ref([
-  { id: '1', username: 'admin', display_name: 'Administrator' },
-  { id: '2', username: 'user1', display_name: 'John Doe' },
-  { id: '3', username: 'user2', display_name: 'Jane Smith' }
-])
+const users = ref<any[]>([])
 
 // Table columns
 const adminColumns = [
   { title: 'Username', dataIndex: 'username', key: 'username' },
   { title: 'Display Name', dataIndex: 'display_name', key: 'display_name' },
   { title: 'Email', dataIndex: 'email', key: 'email' },
-  { title: 'Role', dataIndex: 'role', key: 'role' },
+  { title: 'Role', dataIndex: 'role_code', key: 'role' },
   { title: 'Status', dataIndex: 'status', key: 'status' },
   { title: 'Created At', dataIndex: 'created_at', key: 'created_at' },
   { title: 'Actions', key: 'actions' }
@@ -204,7 +200,7 @@ const adminColumns = [
 // Forms
 const adminForm = reactive({
   userId: '',
-  role: 'system_admin',
+  role: '',
   status: 'active'
 })
 
@@ -276,26 +272,36 @@ const loadData = async () => {
   try {
     // Load administrators
     const adminResponse = await systemApi.getAdministrators({ page: 1, page_size: 100 })
-    administrators.value = adminResponse.data.items
+    administrators.value = adminResponse.items || []
     
     // Load roles
     const rolesResponse = await systemApi.getRoles({ page: 1, page_size: 100 })
-    roles.value = rolesResponse.data.items
+    roles.value = rolesResponse.items || []
+    
+    // Load users for administrator assignment
+    const usersResponse = await userApi.getUsers({ page: 1, page_size: 100 })
+    users.value = usersResponse.items || []
     
     // Load site settings
-    const siteSettings = await systemApi.getSiteSettings()
-    Object.assign(siteForm, {
-      siteName: siteSettings.site_name,
-      siteUrl: siteSettings.site_url,
-      contactEmail: siteSettings.contact_email,
-      supportEmail: siteSettings.support_email,
-      description: siteSettings.description,
-      logo: siteSettings.logo
-    })
+    try {
+      const siteSettings = await systemApi.getSiteSettings()
+      Object.assign(siteForm, {
+        siteName: siteSettings.site_name || 'EIAM Platform',
+        siteUrl: siteSettings.site_url || 'https://eiam.example.com',
+        contactEmail: siteSettings.contact_email || 'admin@example.com',
+        supportEmail: siteSettings.support_email || 'support@example.com',
+        description: siteSettings.description || 'Enterprise Identity and Access Management Platform',
+        logo: siteSettings.logo || ''
+      })
+    } catch (error) {
+      console.error('Failed to load site settings:', error)
+      // 使用默认值
+    }
 
     // Load security settings
-    const securitySettings = await systemApi.getSecuritySettings()
-    Object.assign(securityForm, {
+    try {
+      const securitySettings = await systemApi.getSecuritySettings()
+      Object.assign(securityForm, {
       minPasswordLength: securitySettings.min_password_length,
       maxPasswordLength: securitySettings.max_password_length,
       passwordExpiryDays: securitySettings.password_expiry_days,
@@ -319,9 +325,13 @@ const loadData = async () => {
       enableGeolocation: securitySettings.enable_geolocation,
       enableDeviceFingerprinting: securitySettings.enable_device_fingerprinting,
       notifyFailedLogins: securitySettings.notify_failed_logins,
-      notifyNewDevices: securitySettings.notify_new_devices,
-      notifyPasswordChanges: securitySettings.notify_password_changes
-    })
+              notifyNewDevices: securitySettings.notify_new_devices,
+        notifyPasswordChanges: securitySettings.notify_password_changes
+      })
+    } catch (error) {
+      console.error('Failed to load security settings:', error)
+      // 使用默认值
+    }
   } catch (error) {
     console.error('Failed to load data:', error)
     message.error('Failed to load data')
@@ -446,13 +456,14 @@ const saveSiteConfig = async () => {
       description: siteForm.description,
       logo_url: siteForm.logo
     }
-    await systemApi.updateSystemSettings(settings)
+    await systemApi.updateSiteSettings(settings)
     
     // 同步更新站点store
     siteStore.updateSiteSettings(settings)
     
     message.success('Site configuration saved successfully')
   } catch (error) {
+    console.error('Failed to save site configuration:', error)
     message.error('Failed to save site configuration')
   }
 }
@@ -487,9 +498,10 @@ const saveSecurityConfig = async () => {
       notify_new_devices: securityForm.notifyNewDevices,
       notify_password_changes: securityForm.notifyPasswordChanges
     }
-    await systemApi.updateSystemSettings(settings)
+    await systemApi.updateSecuritySettings(settings)
     message.success('Security configuration saved successfully')
   } catch (error) {
+    console.error('Failed to save security configuration:', error)
     message.error('Failed to save security configuration')
   }
 }

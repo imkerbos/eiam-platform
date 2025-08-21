@@ -1,5 +1,19 @@
 import { http } from './request'
 
+// 分页相关类型
+export interface PaginationParams {
+  page: number
+  page_size: number
+}
+
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  total_pages: number
+  current_page: number
+  page_size: number
+}
+
 export interface DashboardStats {
   totalUsers: number
   totalOrganizations: number
@@ -191,6 +205,11 @@ export const systemApi = {
   // Get site settings (authenticated)
   getSiteSettings: () => {
     return http.get<SystemSettings>('/console/system/site-settings')
+  },
+
+  // Update site settings
+  updateSiteSettings: (data: Partial<SystemSettings>) => {
+    return http.put<SystemSettings>('/console/system/site-settings', data)
   },
 
   // Get public site info (no authentication required)

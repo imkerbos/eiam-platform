@@ -13,11 +13,16 @@ import (
 	"eiam-platform/pkg/database"
 	"eiam-platform/pkg/i18n"
 	"eiam-platform/pkg/logger"
+	"eiam-platform/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"errors"
+	"path/filepath"
+	"strings"
+	"os"
 )
 
 // GetSystemSettingsHandler 获取系统设置
@@ -316,6 +321,217 @@ func GetSecuritySettingsHandler(c *gin.Context) {
 		"code":    200,
 		"message": i18n.Success,
 		"data":    securitySettings,
+	})
+}
+
+// UpdateSiteSettingsHandler 更新站点设置
+func UpdateSiteSettingsHandler(c *gin.Context) {
+	var req struct {
+		SiteName     string `json:"site_name"`
+		SiteURL      string `json:"site_url"`
+		ContactEmail string `json:"contact_email"`
+		SupportEmail string `json:"support_email"`
+		Description  string `json:"description"`
+		LogoURL      string `json:"logo_url"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.ErrorError("Failed to bind request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request data",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 更新或创建站点设置
+	settings := []struct {
+		key   string
+		value string
+	}{
+		{"site_name", req.SiteName},
+		{"site_url", req.SiteURL},
+		{"contact_email", req.ContactEmail},
+		{"support_email", req.SupportEmail},
+		{"description", req.Description},
+		{"logo", req.LogoURL},
+	}
+
+	for _, setting := range settings {
+		var existingSetting models.SystemSetting
+		if err := database.DB.Where("key = ? AND category = ?", setting.key, "site").First(&existingSetting).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// 创建新设置
+				newSetting := models.SystemSetting{
+					ID:       utils.GenerateTradeIDString("setting"),
+					Key:      setting.key,
+					Value:    setting.value,
+					Category: "site",
+					Type:     "string",
+				}
+				if err := database.DB.Create(&newSetting).Error; err != nil {
+					logger.ErrorError("Failed to create setting", zap.Error(err), zap.String("key", setting.key))
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"code":    500,
+						"message": "Failed to save setting",
+						"data":    nil,
+					})
+					return
+				}
+			} else {
+				logger.ErrorError("Failed to check existing setting", zap.Error(err), zap.String("key", setting.key))
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "Failed to check existing setting",
+					"data":    nil,
+				})
+				return
+			}
+		} else {
+			// 更新现有设置
+			existingSetting.Value = setting.value
+			if err := database.DB.Save(&existingSetting).Error; err != nil {
+				logger.ErrorError("Failed to update setting", zap.Error(err), zap.String("key", setting.key))
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "Failed to update setting",
+					"data":    nil,
+				})
+				return
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Site settings updated successfully",
+		"data":    nil,
+	})
+}
+
+// UpdateSecuritySettingsHandler 更新安全设置
+func UpdateSecuritySettingsHandler(c *gin.Context) {
+	var req struct {
+		MinPasswordLength           int  `json:"min_password_length"`
+		MaxPasswordLength           int  `json:"max_password_length"`
+		PasswordExpiryDays          int  `json:"password_expiry_days"`
+		RequireUppercase            bool `json:"require_uppercase"`
+		RequireLowercase            bool `json:"require_lowercase"`
+		RequireNumbers              bool `json:"require_numbers"`
+		RequireSpecialChars         bool `json:"require_special_chars"`
+		PasswordHistoryCount        int  `json:"password_history_count"`
+		SessionTimeout              int  `json:"session_timeout"`
+		MaxConcurrentSessions       int  `json:"max_concurrent_sessions"`
+		RememberMeDays              int  `json:"remember_me_days"`
+		Enable2FA                   bool `json:"enable_2fa"`
+		Require2FAForAdmins         bool `json:"require_2fa_for_admins"`
+		AllowBackupCodes            bool `json:"allow_backup_codes"`
+		EnableTOTP                  bool `json:"enable_totp"`
+		EnableSMS                   bool `json:"enable_sms"`
+		EnableEmail                 bool `json:"enable_email"`
+		MaxLoginAttempts            int  `json:"max_login_attempts"`
+		LockoutDuration             int  `json:"lockout_duration"`
+		EnableIPWhitelist           bool `json:"enable_ip_whitelist"`
+		EnableGeolocation           bool `json:"enable_geolocation"`
+		EnableDeviceFingerprinting  bool `json:"enable_device_fingerprinting"`
+		NotifyFailedLogins          bool `json:"notify_failed_logins"`
+		NotifyNewDevices            bool `json:"notify_new_devices"`
+		NotifyPasswordChanges       bool `json:"notify_password_changes"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.ErrorError("Failed to bind request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request data",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 更新或创建安全设置
+	settings := []struct {
+		key   string
+		value interface{}
+		typ   string
+	}{
+		{"min_password_length", req.MinPasswordLength, "number"},
+		{"max_password_length", req.MaxPasswordLength, "number"},
+		{"password_expiry_days", req.PasswordExpiryDays, "number"},
+		{"require_uppercase", req.RequireUppercase, "boolean"},
+		{"require_lowercase", req.RequireLowercase, "boolean"},
+		{"require_numbers", req.RequireNumbers, "boolean"},
+		{"require_special_chars", req.RequireSpecialChars, "boolean"},
+		{"password_history_count", req.PasswordHistoryCount, "number"},
+		{"session_timeout", req.SessionTimeout, "number"},
+		{"max_concurrent_sessions", req.MaxConcurrentSessions, "number"},
+		{"remember_me_days", req.RememberMeDays, "number"},
+		{"enable_2fa", req.Enable2FA, "boolean"},
+		{"require_2fa_for_admins", req.Require2FAForAdmins, "boolean"},
+		{"allow_backup_codes", req.AllowBackupCodes, "boolean"},
+		{"enable_totp", req.EnableTOTP, "boolean"},
+		{"enable_sms", req.EnableSMS, "boolean"},
+		{"enable_email", req.EnableEmail, "boolean"},
+		{"max_login_attempts", req.MaxLoginAttempts, "number"},
+		{"lockout_duration", req.LockoutDuration, "number"},
+		{"enable_ip_whitelist", req.EnableIPWhitelist, "boolean"},
+		{"enable_geolocation", req.EnableGeolocation, "boolean"},
+		{"enable_device_fingerprinting", req.EnableDeviceFingerprinting, "boolean"},
+		{"notify_failed_logins", req.NotifyFailedLogins, "boolean"},
+		{"notify_new_devices", req.NotifyNewDevices, "boolean"},
+		{"notify_password_changes", req.NotifyPasswordChanges, "boolean"},
+	}
+
+	for _, setting := range settings {
+		var existingSetting models.SystemSetting
+		if err := database.DB.Where("key = ? AND category = ?", setting.key, "security").First(&existingSetting).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// 创建新设置
+				newSetting := models.SystemSetting{
+					ID:       utils.GenerateTradeIDString("setting"),
+					Key:      setting.key,
+					Value:    convertToString(setting.value),
+					Category: "security",
+					Type:     setting.typ,
+				}
+				if err := database.DB.Create(&newSetting).Error; err != nil {
+					logger.ErrorError("Failed to create security setting", zap.Error(err), zap.String("key", setting.key))
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"code":    500,
+						"message": "Failed to save security setting",
+						"data":    nil,
+					})
+					return
+				}
+			} else {
+				logger.ErrorError("Failed to check existing security setting", zap.Error(err), zap.String("key", setting.key))
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "Failed to check existing security setting",
+					"data":    nil,
+				})
+				return
+			}
+		} else {
+			// 更新现有设置
+			existingSetting.Value = convertToString(setting.value)
+			if err := database.DB.Save(&existingSetting).Error; err != nil {
+				logger.ErrorError("Failed to update security setting", zap.Error(err), zap.String("key", setting.key))
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "Failed to update security setting",
+					"data":    nil,
+				})
+				return
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Security settings updated successfully",
+		"data":    nil,
 	})
 }
 
@@ -861,4 +1077,135 @@ func GetPublicSiteInfoHandler(c *gin.Context) {
 			"logo_url":  logoUrl,
 		},
 	})
+}
+
+// UploadLogoHandler 上传Logo
+func UploadLogoHandler(c *gin.Context) {
+	file, err := c.FormFile("logo")
+	if err != nil {
+		logger.ErrorError("Failed to get uploaded file", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "No file uploaded",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查文件类型
+	if !isValidImageFile(file.Filename) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid file type. Only JPG, PNG, GIF are allowed",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查文件大小 (2MB)
+	if file.Size > 2*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "File size too large. Maximum 2MB allowed",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 生成唯一文件名
+	ext := filepath.Ext(file.Filename)
+	filename := fmt.Sprintf("logo_%s%s", utils.GenerateTradeIDString("logo"), ext)
+	
+	// 确保上传目录存在
+	uploadDir := "uploads/logos"
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		logger.ErrorError("Failed to create upload directory", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to create upload directory",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 保存文件
+	filepath := fmt.Sprintf("%s/%s", uploadDir, filename)
+	if err := c.SaveUploadedFile(file, filepath); err != nil {
+		logger.ErrorError("Failed to save uploaded file", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to save uploaded file",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 生成访问URL
+	logoURL := fmt.Sprintf("/uploads/logos/%s", filename)
+
+	// 更新系统设置中的logo
+	setting := models.SystemSetting{
+		Key:      "logo",
+		Value:    logoURL,
+		Category: "site",
+		Type:     "string",
+	}
+
+	// 查找现有设置或创建新设置
+	var existingSetting models.SystemSetting
+	if err := database.DB.Where("key = ? AND category = ?", "logo", "site").First(&existingSetting).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 创建新设置
+			setting.ID = utils.GenerateTradeIDString("setting")
+			if err := database.DB.Create(&setting).Error; err != nil {
+				logger.ErrorError("Failed to create logo setting", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "Failed to save logo setting",
+					"data":    nil,
+				})
+				return
+			}
+		} else {
+			logger.ErrorError("Failed to check existing logo setting", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "Failed to check existing logo setting",
+				"data":    nil,
+			})
+			return
+		}
+	} else {
+		// 更新现有设置
+		existingSetting.Value = logoURL
+		if err := database.DB.Save(&existingSetting).Error; err != nil {
+			logger.ErrorError("Failed to update logo setting", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "Failed to update logo setting",
+				"data":    nil,
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Logo uploaded successfully",
+		"data": gin.H{
+			"logo_url": logoURL,
+		},
+	})
+}
+
+// isValidImageFile 检查是否为有效的图片文件
+func isValidImageFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	validExts := []string{".jpg", ".jpeg", ".png", ".gif"}
+	for _, validExt := range validExts {
+		if ext == validExt {
+			return true
+		}
+	}
+	return false
 }

@@ -195,7 +195,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		system.GET("/settings", handlers.GetSystemSettingsHandler)
 		system.PUT("/settings", handlers.UpdateSystemSettingsHandler)
 		system.GET("/site-settings", handlers.GetSiteSettingsHandler)
+		system.PUT("/site-settings", handlers.UpdateSiteSettingsHandler)
 		system.GET("/security-settings", handlers.GetSecuritySettingsHandler)
+		system.PUT("/security-settings", handlers.UpdateSecuritySettingsHandler)
+		system.POST("/upload-logo", handlers.UploadLogoHandler)
 	}
 
 	// 系统API（需要管理员权限）

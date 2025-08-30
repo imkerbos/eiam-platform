@@ -206,6 +206,55 @@ func CreateUserHandler(c *gin.Context) {
 	}
 	logger.Info("Organization found", zap.String("org_id", organization.ID), zap.String("org_name", organization.Name))
 
+	// 验证密码策略
+	var policy models.PasswordPolicy
+	if err := database.DB.Where("is_active = ?", true).First(&policy).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// 使用默认策略
+			defaultPolicy := utils.DefaultPasswordPolicy()
+			validationResult := utils.ValidatePassword(req.Password, defaultPolicy, req.Username, nil)
+			if !validationResult.Valid {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "Password does not meet policy requirements",
+					"errors":  validationResult.Errors,
+				})
+				return
+			}
+		} else {
+			logger.Error("Failed to get password policy", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": i18n.InternalServerError,
+				"data":    nil,
+			})
+			return
+		}
+	} else {
+		// 使用数据库中的策略
+		utilsPolicy := &utils.PasswordPolicy{
+			MinLength:        policy.MinLength,
+			MaxLength:        policy.MaxLength,
+			RequireUppercase: policy.RequireUppercase,
+			RequireLowercase: policy.RequireLowercase,
+			RequireNumbers:   policy.RequireNumbers,
+			RequireSpecial:   policy.RequireSpecialChars,
+			HistoryCount:     policy.HistoryCount,
+			ExpiryDays:       policy.ExpiryDays,
+			PreventCommon:    policy.PreventCommon,
+			PreventUsername:  policy.PreventUsername,
+		}
+		validationResult := utils.ValidatePassword(req.Password, utilsPolicy, req.Username, nil)
+		if !validationResult.Valid {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Password does not meet policy requirements",
+				"errors":  validationResult.Errors,
+			})
+			return
+		}
+	}
+
 	// 加密密码
 	hashedPassword, err := utils.HashPassword(req.Password, 12)
 	if err != nil {

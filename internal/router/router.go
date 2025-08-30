@@ -201,6 +201,17 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		system.POST("/upload-logo", handlers.UploadLogoHandler)
 	}
 
+	// 密码策略管理（需要管理员权限）
+	passwordPolicy := console.Group("/password-policy")
+	passwordPolicy.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	passwordPolicy.Use(middleware.AdminMiddleware())
+	{
+		passwordPolicy.GET("", handlers.GetPasswordPolicyHandler)
+		passwordPolicy.PUT("", handlers.UpdatePasswordPolicyHandler)
+		passwordPolicy.POST("/validate", handlers.ValidatePasswordHandler)
+		passwordPolicy.POST("/generate", handlers.GeneratePasswordHandler)
+	}
+
 	// 系统API（需要管理员权限）
 	systemAPI := console.Group("/dashboard")
 	systemAPI.Use(middleware.AuthMiddleware(jwtManager, sessionManager))

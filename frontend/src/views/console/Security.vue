@@ -76,7 +76,43 @@
               <a-button type="primary" @click="savePasswordPolicy">
                 Save Password Policy
               </a-button>
+              <a-button style="margin-left: 8px;" @click="generatePassword">
+                Generate Password
+              </a-button>
             </a-form-item>
+
+            <a-divider>Password Testing</a-divider>
+            
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item label="Test Password">
+                  <a-input v-model:value="testPassword" placeholder="Enter password to test" />
+                </a-form-item>
+                <a-button @click="validatePassword" :loading="validating">
+                  Validate Password
+                </a-button>
+              </a-col>
+              <a-col :span="12">
+                <div v-if="validationResult" class="validation-result">
+                  <h4>Validation Result:</h4>
+                  <p><strong>Valid:</strong> {{ validationResult.valid ? 'Yes' : 'No' }}</p>
+                  <p><strong>Strength:</strong> {{ validationResult.strength_text }} ({{ validationResult.strength }}/5)</p>
+                  <p><strong>Color:</strong> <span :style="{color: validationResult.strength_color}">{{ validationResult.strength_color }}</span></p>
+                  <div v-if="validationResult.errors.length > 0">
+                    <strong>Errors:</strong>
+                    <ul>
+                      <li v-for="error in validationResult.errors" :key="error">{{ error }}</li>
+                    </ul>
+                  </div>
+                  <div v-if="validationResult.warnings.length > 0">
+                    <strong>Warnings:</strong>
+                    <ul>
+                      <li v-for="warning in validationResult.warnings" :key="warning">{{ warning }}</li>
+                    </ul>
+                  </div>
+                </div>
+              </a-col>
+            </a-row>
           </a-form>
         </div>
       </a-tab-pane>
@@ -255,6 +291,9 @@ import { systemApi } from '@/api/system'
 // Data
 const activeTab = ref('password')
 const loading = ref(false)
+const validating = ref(false)
+const testPassword = ref('')
+const validationResult = ref(null)
 
 // Form refs
 const passwordFormRef = ref()
@@ -309,42 +348,49 @@ const passwordRules = {
 const loadSecuritySettings = async () => {
   loading.value = true
   try {
-    const settings = await systemApi.getSecuritySettings()
+    // Load password policy from dedicated API
+    const passwordPolicy = await systemApi.getPasswordPolicy()
     
-    // Update forms with loaded data
+    // Update password form with loaded data
     Object.assign(passwordForm, {
-      minLength: settings.min_password_length,
-      maxLength: settings.max_password_length,
-      expiryDays: settings.password_expiry_days,
-      historyCount: settings.password_history_count,
-      requireUppercase: settings.require_uppercase,
-      requireLowercase: settings.require_lowercase,
-      requireNumbers: settings.require_numbers,
-      requireSpecialChars: settings.require_special_chars
+      minLength: passwordPolicy.data.min_length,
+      maxLength: passwordPolicy.data.max_length,
+      expiryDays: passwordPolicy.data.expiry_days,
+      historyCount: passwordPolicy.data.history_count,
+      requireUppercase: passwordPolicy.data.require_uppercase,
+      requireLowercase: passwordPolicy.data.require_lowercase,
+      requireNumbers: passwordPolicy.data.require_numbers,
+      requireSpecialChars: passwordPolicy.data.require_special_chars
     })
     
-    Object.assign(sessionForm, {
-      timeout: settings.session_timeout,
-      maxSessions: settings.max_concurrent_sessions,
-      rememberMeDays: settings.remember_me_days
-    })
-    
-    Object.assign(twoFAForm, {
-      enable2FA: settings.enable_2fa,
-      require2FAForAdmins: settings.require_2fa_for_admins,
-      enableTOTP: settings.enable_totp,
-      enableSMS: settings.enable_sms,
-      enableEmail: settings.enable_email,
-      allowBackupCodes: settings.allow_backup_codes
-    })
-    
-    Object.assign(accountForm, {
-      maxAttempts: settings.max_login_attempts,
-      lockoutDuration: settings.lockout_duration
-    })
+    // Load other security settings (if available)
+    try {
+      const settings = await systemApi.getSecuritySettings()
+      Object.assign(sessionForm, {
+        timeout: settings.session_timeout,
+        maxSessions: settings.max_concurrent_sessions,
+        rememberMeDays: settings.remember_me_days
+      })
+      
+      Object.assign(twoFAForm, {
+        enable2FA: settings.enable_2fa,
+        require2FAForAdmins: settings.require_2fa_for_admins,
+        enableTOTP: settings.enable_totp,
+        enableSMS: settings.enable_sms,
+        enableEmail: settings.enable_email,
+        allowBackupCodes: settings.allow_backup_codes
+      })
+      
+      Object.assign(accountForm, {
+        maxAttempts: settings.max_login_attempts,
+        lockoutDuration: settings.lockout_duration
+      })
+    } catch (error) {
+      console.log('Other security settings not available, using defaults')
+    }
     
   } catch (error) {
-    message.error('Failed to load security settings')
+    message.error('Failed to load password policy')
   } finally {
     loading.value = false
   }
@@ -354,21 +400,54 @@ const savePasswordPolicy = async () => {
   try {
     await passwordFormRef.value?.validate()
     
-    const settings = {
-      min_password_length: passwordForm.minLength,
-      max_password_length: passwordForm.maxLength,
-      password_expiry_days: passwordForm.expiryDays,
-      password_history_count: passwordForm.historyCount,
+    const policy = {
+      min_length: passwordForm.minLength,
+      max_length: passwordForm.maxLength,
+      expiry_days: passwordForm.expiryDays,
+      history_count: passwordForm.historyCount,
       require_uppercase: passwordForm.requireUppercase,
       require_lowercase: passwordForm.requireLowercase,
       require_numbers: passwordForm.requireNumbers,
-      require_special_chars: passwordForm.requireSpecialChars
+      require_special_chars: passwordForm.requireSpecialChars,
+      prevent_common: true,
+      prevent_username: true,
+      is_active: true
     }
     
-    await systemApi.updateSecuritySettings(settings)
+    await systemApi.updatePasswordPolicy(policy)
     message.success('Password policy saved successfully')
   } catch (error) {
     message.error('Failed to save password policy')
+  }
+}
+
+const generatePassword = async () => {
+  try {
+    const response = await systemApi.generatePassword()
+    testPassword.value = response.data.password
+    message.success('Password generated successfully')
+  } catch (error) {
+    message.error('Failed to generate password')
+  }
+}
+
+const validatePassword = async () => {
+  if (!testPassword.value) {
+    message.warning('Please enter a password to test')
+    return
+  }
+  
+  validating.value = true
+  try {
+    const response = await systemApi.validatePassword({
+      password: testPassword.value,
+      username: 'admin' // 可以根据需要修改
+    })
+    validationResult.value = response.data
+  } catch (error) {
+    message.error('Failed to validate password')
+  } finally {
+    validating.value = false
   }
 }
 
@@ -455,5 +534,32 @@ onMounted(() => {
   font-size: 12px;
   color: #8c8c8c;
   margin-top: 4px;
+}
+
+.validation-result {
+  background: #f5f5f5;
+  padding: 16px;
+  border-radius: 6px;
+  border-left: 4px solid #1890ff;
+}
+
+.validation-result h4 {
+  margin: 0 0 12px 0;
+  color: #262626;
+}
+
+.validation-result p {
+  margin: 4px 0;
+  color: #595959;
+}
+
+.validation-result ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.validation-result li {
+  color: #ff4d4f;
+  margin: 2px 0;
 }
 </style>

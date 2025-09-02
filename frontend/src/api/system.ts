@@ -234,6 +234,23 @@ export const systemApi = {
         'Content-Type': 'multipart/form-data'
       }
     })
+  },
+
+  // Password Policy APIs
+  getPasswordPolicy: () => {
+    return http.get('/console/password-policy')
+  },
+
+  updatePasswordPolicy: (data: any) => {
+    return http.put('/console/password-policy', data)
+  },
+
+  validatePassword: (data: { password: string; username?: string }) => {
+    return http.post('/console/password-policy/validate', data)
+  },
+
+  generatePassword: () => {
+    return http.post('/console/password-policy/generate')
   }
 }
 

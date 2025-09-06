@@ -257,9 +257,46 @@ func LoginHandler(c *gin.Context) {
 	// 生成JWT令牌（包含完整用户信息）
 	cfg := config.GetConfig()
 
-	// 获取用户角色和权限 (这里暂时为空，后续可以扩展)
-	roles := []string{}
-	permissions := []string{}
+	// 获取用户角色和权限
+	var roles []string
+	var permissions []string
+
+	logger.Info("Starting to load user roles for login",
+		zap.String("username", user.Username),
+		zap.String("user_id", user.ID),
+	)
+
+	// 手动查询用户角色
+	var userRoles []models.Role
+	logger.Info("About to execute role query",
+		zap.String("username", user.Username),
+		zap.String("user_id", user.ID),
+	)
+
+	if err := database.DB.Table("user_roles").
+		Select("roles.*").
+		Joins("JOIN roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ?", user.ID).
+		Unscoped().
+		Find(&userRoles).Error; err == nil {
+		logger.Info("Role query executed successfully",
+			zap.String("username", user.Username),
+			zap.Int("role_count", len(userRoles)),
+		)
+		for _, role := range userRoles {
+			roles = append(roles, role.Code)
+		}
+		logger.Info("Loaded user roles for login",
+			zap.String("username", user.Username),
+			zap.Strings("roles", roles),
+			zap.Int("role_count", len(userRoles)),
+		)
+	} else {
+		logger.ErrorError("Failed to load user roles for login",
+			zap.String("username", user.Username),
+			zap.Error(err),
+		)
+	}
 
 	accessToken, err := utils.GenerateAccessTokenWithUserInfo(
 		user.ID,
@@ -325,7 +362,7 @@ func LoginHandler(c *gin.Context) {
 		zap.Bool("session_manager_initialized", sessionManager != nil),
 		zap.String("username", user.Username),
 	)
-	
+
 	if sessionManager != nil {
 		ctx := context.Background()
 		sessionID, err = sessionManager.CreateSession(
@@ -587,7 +624,7 @@ func GetAllSessionsHandler(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	
+
 	// 获取所有用户
 	var users []models.User
 	query := database.DB.Model(&models.User{})
@@ -618,34 +655,74 @@ func GetAllSessionsHandler(c *gin.Context) {
 			continue
 		}
 
-		for _, session := range sessions {
-			// 检查会话是否过期
-			isActive := time.Now().Before(session.ExpiresAt)
-			
-			// 过滤活跃状态
-			if isActiveFilter != "" {
-				isActiveBool, _ := strconv.ParseBool(isActiveFilter)
-				if isActive != isActiveBool {
-					continue
-				}
-			}
+		// 获取多设备登录配置
+		allowMultiDevice := getMultiDeviceLoginConfig(ctx)
 
-			sessionData := map[string]interface{}{
-				"id":            session.SessionID,
-				"user_id":       user.ID,
-				"username":      user.Username,
-				"session_id":    session.SessionID,
-				"login_ip":      session.LoginIP,
-				"user_agent":    session.UserAgent,
-				"device_type":   "Unknown", // SessionInfo中没有这个字段
-				"location":      "Unknown", // SessionInfo中没有这个字段
-				"login_time":    session.LoginTime,
-				"last_activity": session.LastActivity,
-				"expires_at":    session.ExpiresAt,
-				"is_active":     isActive,
+		if allowMultiDevice {
+			// 多设备模式：显示所有活跃会话
+			for _, session := range sessions {
+				// 检查会话是否过期
+				isActive := time.Now().Before(session.ExpiresAt)
+
+				// 过滤活跃状态
+				if isActiveFilter != "" {
+					isActiveBool, _ := strconv.ParseBool(isActiveFilter)
+					if isActive != isActiveBool {
+						continue
+					}
+				}
+
+				sessionData := map[string]interface{}{
+					"id":                 session.SessionID,
+					"user_id":            user.ID,
+					"username":           user.Username,
+					"session_id":         session.SessionID,
+					"login_ip":           session.LoginIP,
+					"user_agent":         session.UserAgent,
+					"device_type":        session.DeviceType,
+					"device_fingerprint": session.DeviceFingerprint,
+					"location":           "Unknown", // 暂时保持Unknown
+					"login_time":         session.LoginTime,
+					"last_activity":      session.LastActivity,
+					"expires_at":         session.ExpiresAt,
+					"is_active":          isActive,
+				}
+				allSessions = append(allSessions, sessionData)
+				total++
 			}
-			allSessions = append(allSessions, sessionData)
-			total++
+		} else {
+			// 单设备模式：只保留最新的活跃会话
+			latestSession := getLatestActiveSession(sessions)
+			if latestSession != nil {
+				// 检查会话是否过期
+				isActive := time.Now().Before(latestSession.ExpiresAt)
+
+				// 过滤活跃状态
+				if isActiveFilter != "" {
+					isActiveBool, _ := strconv.ParseBool(isActiveFilter)
+					if isActive != isActiveBool {
+						continue
+					}
+				}
+
+				sessionData := map[string]interface{}{
+					"id":                 latestSession.SessionID,
+					"user_id":            user.ID,
+					"username":           user.Username,
+					"session_id":         latestSession.SessionID,
+					"login_ip":           latestSession.LoginIP,
+					"user_agent":         latestSession.UserAgent,
+					"device_type":        latestSession.DeviceType,
+					"device_fingerprint": latestSession.DeviceFingerprint,
+					"location":           "Unknown", // 暂时保持Unknown
+					"login_time":         latestSession.LoginTime,
+					"last_activity":      latestSession.LastActivity,
+					"expires_at":         latestSession.ExpiresAt,
+					"is_active":          isActive,
+				}
+				allSessions = append(allSessions, sessionData)
+				total++
+			}
 		}
 	}
 
@@ -675,7 +752,35 @@ func GetAllSessionsHandler(c *gin.Context) {
 	})
 }
 
+// getLatestActiveSession 获取用户最新的活跃会话
+func getLatestActiveSession(sessions []*session.SessionInfo) *session.SessionInfo {
+	if len(sessions) == 0 {
+		return nil
+	}
 
+	// 过滤掉已过期的会话
+	var activeSessions []*session.SessionInfo
+	now := time.Now()
+	for _, s := range sessions {
+		if now.Before(s.ExpiresAt) {
+			activeSessions = append(activeSessions, s)
+		}
+	}
+
+	if len(activeSessions) == 0 {
+		return nil
+	}
+
+	// 返回最新的会话（按登录时间排序）
+	latest := activeSessions[0]
+	for _, s := range activeSessions[1:] {
+		if s.LoginTime.After(latest.LoginTime) {
+			latest = s
+		}
+	}
+
+	return latest
+}
 
 // RefreshTokenHandler 刷新令牌处理器
 func RefreshTokenHandler(c *gin.Context) {
@@ -763,6 +868,66 @@ func RefreshTokenHandler(c *gin.Context) {
 			RefreshToken: refreshToken,
 			TokenType:    "Bearer",
 			ExpiresIn:    int64(cfg.JWT.AccessTokenExpire),
+		},
+	})
+}
+
+// getMultiDeviceLoginConfig 获取多设备登录配置
+func getMultiDeviceLoginConfig(ctx context.Context) bool {
+	// 从Redis获取配置，如果没有配置则默认为false（单设备模式）
+	configKey := "system:security:allow_multi_device_login"
+	value, err := redis.RDB.Get(ctx, configKey).Result()
+	if err != nil {
+		// 如果没有配置，返回默认值false
+		return false
+	}
+
+	// 解析配置值
+	allowMultiDevice, _ := strconv.ParseBool(value)
+	return allowMultiDevice
+}
+
+// ForceLogoutAllUsersHandler 强制所有用户下线
+func ForceLogoutAllUsersHandler(c *gin.Context) {
+	// 获取sessionManager实例
+	sessionManager := GetSessionManager()
+	if sessionManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Session manager not initialized",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 强制所有用户下线
+	ctx := context.Background()
+	count, err := sessionManager.ForceLogoutAllUsers(ctx)
+	if err != nil {
+		logger.ErrorError("Failed to force logout all users", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to force logout all users",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 记录审计日志
+	userID := c.GetString("user_id")
+	username := c.GetString("username")
+	logger.Info("All users force logged out",
+		zap.String("admin_user_id", userID),
+		zap.String("admin_username", username),
+		zap.Int("affected_sessions", count),
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "All users have been force logged out successfully",
+		"data": gin.H{
+			"affected_sessions": count,
+			"timestamp":         time.Now().Unix(),
 		},
 	})
 }

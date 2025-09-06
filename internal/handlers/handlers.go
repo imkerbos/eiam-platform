@@ -126,11 +126,26 @@ func ConsoleLoginHandler(c *gin.Context) {
 	var roles []string
 	var permissions []string
 
-	// 预加载用户角色
-	if err := database.DB.Preload("Roles").Where("id = ?", user.ID).First(&user).Error; err == nil {
-		for _, role := range user.Roles {
+	// 手动查询用户角色
+	var userRoles []models.Role
+	if err := database.DB.Table("user_roles").
+		Select("roles.*").
+		Joins("JOIN roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ?", user.ID).
+		Unscoped().
+		Find(&userRoles).Error; err == nil {
+		for _, role := range userRoles {
 			roles = append(roles, role.Code)
 		}
+		logger.Info("Loaded user roles",
+			zap.String("username", user.Username),
+			zap.Strings("roles", roles),
+		)
+	} else {
+		logger.ErrorError("Failed to load user roles",
+			zap.String("username", user.Username),
+			zap.Error(err),
+		)
 	}
 
 	// 获取配置
@@ -453,15 +468,370 @@ func ConsoleGetMeHandler(c *gin.Context) {
 
 // Portal authentication handlers
 func PortalLoginHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.AccessInfo("Portal login request validation failed",
+			zap.String("ip", c.ClientIP()),
+			zap.String("username", req.Username),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 获取用户信息
+	var user models.User
+	if err := database.DB.Where("username = ? OR email = ?", req.Username, req.Username).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			logger.AccessInfo("Portal login failed: user not found",
+				zap.String("ip", c.ClientIP()),
+				zap.String("username", req.Username),
+			)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": i18n.InvalidCredentials,
+				"data":    nil,
+			})
+			return
+		}
+		logger.ErrorError("Database error during portal login",
+			zap.String("ip", c.ClientIP()),
+			zap.String("username", req.Username),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查用户状态
+	if user.Status != models.StatusActive {
+		logger.AccessInfo("Portal login failed: user inactive",
+			zap.String("ip", c.ClientIP()),
+			zap.String("username", user.Username),
+			zap.String("status", user.Status.String()),
+		)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": i18n.UserInactive,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 验证密码
+	if !utils.CheckPassword(req.Password, user.Password) {
+		// 更新失败登录次数
+		user.FailedCount++
+		if user.FailedCount >= 5 {
+			// 锁定账户30分钟
+			lockTime := time.Now().Add(30 * time.Minute)
+			user.LockedUntil = &lockTime
+		}
+		database.DB.Save(&user)
+
+		logger.AccessInfo("Portal login failed: invalid password",
+			zap.String("ip", c.ClientIP()),
+			zap.String("username", user.Username),
+			zap.Int("failed_count", user.FailedCount),
+		)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": i18n.InvalidCredentials,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查账户是否被锁定
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		logger.AccessInfo("Portal login failed: account locked",
+			zap.String("ip", c.ClientIP()),
+			zap.String("username", user.Username),
+			zap.Time("locked_until", *user.LockedUntil),
+		)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": i18n.AccountLocked,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 获取用户角色和权限
+	var roles []string
+	var permissions []string
+
+	// 手动查询用户角色
+	var userRoles []models.Role
+	if err := database.DB.Table("user_roles").
+		Select("roles.*").
+		Joins("JOIN roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ?", user.ID).
+		Unscoped().
+		Find(&userRoles).Error; err == nil {
+		for _, role := range userRoles {
+			roles = append(roles, role.Code)
+		}
+		logger.Info("Loaded user roles for portal login",
+			zap.String("username", user.Username),
+			zap.Strings("roles", roles),
+		)
+	} else {
+		logger.ErrorError("Failed to load user roles for portal login",
+			zap.String("username", user.Username),
+			zap.Error(err),
+		)
+	}
+
+	// 获取配置
+	cfg := config.GetConfig()
+
+	// 创建Redis会话（在生成token之前）
+	var sessionID string
+	var err error
+	if sessionManager != nil {
+		ctx := context.Background()
+		sessionID, err = sessionManager.CreateSession(
+			ctx,
+			user.ID,
+			user.Username,
+			user.Email,
+			user.DisplayName,
+			c.ClientIP(),
+			c.GetHeader("User-Agent"),
+			"", // tokenID将在后续设置
+			time.Duration(cfg.JWT.AccessTokenExpire)*time.Second,
+		)
+		if err != nil {
+			logger.ErrorError("Failed to create session for portal login",
+				zap.String("ip", c.ClientIP()),
+				zap.String("username", user.Username),
+				zap.Error(err),
+			)
+			// 会话创建失败不应该影响登录流程，只记录错误
+		} else {
+			logger.AccessInfo("Session created successfully for portal login",
+				zap.String("session_id", sessionID),
+				zap.String("username", user.Username),
+			)
+		}
+	}
+
+	// 生成JWT令牌（包含session_id）
+	jwtManager := utils.NewJWTManager(&cfg.JWT)
+
+	// 生成trade_id
+	tradeID := utils.GenerateTradeIDString("portal_login")
+
+	// 使用新的token生成方式，包含session_id
+	tokenInfo := &utils.TokenInfo{
+		UserID:      user.ID,
+		Username:    user.Username,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		Roles:       roles,
+		Permissions: permissions,
+		SessionID:   sessionID, // 包含session_id
+		TradeID:     tradeID,
+	}
+
+	accessToken, err := jwtManager.GenerateAccessToken(tokenInfo)
+	if err != nil {
+		logger.ErrorError("Failed to generate access token for portal login",
+			zap.String("ip", c.ClientIP()),
+			zap.String("username", user.Username),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	refreshToken, err := jwtManager.GenerateRefreshToken(user.ID, sessionID, tradeID)
+	if err != nil {
+		logger.ErrorError("Failed to generate refresh token for portal login",
+			zap.String("ip", c.ClientIP()),
+			zap.String("username", user.Username),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 更新用户登录信息
+	now := time.Now()
+	user.LastLoginAt = &now
+	user.LastLoginIP = c.ClientIP()
+	user.FailedCount = 0   // 重置失败次数
+	user.LockedUntil = nil // 清除锁定状态
+	database.DB.Save(&user)
+
+	// 记录登录日志
+	logger.AccessInfo("Portal login successful",
+		zap.String("ip", c.ClientIP()),
+		zap.String("username", user.Username),
+		zap.String("user_id", user.ID),
+		zap.String("session_id", sessionID),
+		zap.String("trade_id", tradeID),
+	)
+
+	// 返回登录成功响应
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Login successful",
+		"data": gin.H{
+			"access_token":  accessToken,
+			"refresh_token": refreshToken,
+			"token_type":    "Bearer",
+			"expires_in":    cfg.JWT.AccessTokenExpire,
+			"user": gin.H{
+				"id":           user.ID,
+				"username":     user.Username,
+				"email":        user.Email,
+				"display_name": user.DisplayName,
+				"roles":        roles,
+				"permissions":  permissions,
+			},
+		},
+		"trade_id": tradeID,
+	})
 }
 
 func PortalLogoutHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	userID := c.GetString("user_id")
+	sessionID := c.GetString("session_id")
+
+	if sessionManager != nil && sessionID != "" {
+		ctx := context.Background()
+		err := sessionManager.DeleteSession(ctx, sessionID)
+		if err != nil {
+			logger.ErrorError("Failed to delete session during portal logout",
+				zap.String("user_id", userID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+		} else {
+			logger.AccessInfo("Session deleted successfully during portal logout",
+				zap.String("user_id", userID),
+				zap.String("session_id", sessionID),
+			)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":     200,
+		"message":  "Logout successful",
+		"data":     nil,
+		"trade_id": c.GetString("trade_id"),
+	})
 }
 
 func PortalRefreshTokenHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	var req RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 验证refresh token
+	cfg := config.GetConfig()
+	jwtManager := utils.NewJWTManager(&cfg.JWT)
+
+	claims, err := jwtManager.ValidateRefreshToken(req.RefreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid refresh token",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 获取用户信息
+	var user models.User
+	if err := database.DB.Where("id = ?", claims.UserID).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "User not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查用户状态
+	if user.Status != models.StatusActive {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": i18n.UserInactive,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 获取用户角色
+	var roles []string
+	var userRoles []models.Role
+	if err := database.DB.Table("user_roles").
+		Select("roles.*").
+		Joins("JOIN roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ?", user.ID).
+		Unscoped().
+		Find(&userRoles).Error; err == nil {
+		for _, role := range userRoles {
+			roles = append(roles, role.Code)
+		}
+	}
+
+	// 生成新的access token
+	tokenInfo := &utils.TokenInfo{
+		UserID:      user.ID,
+		Username:    user.Username,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		Roles:       roles,
+		Permissions: []string{}, // 暂时为空
+		SessionID:   claims.SessionID,
+		TradeID:     utils.GenerateTradeIDString("portal_refresh"),
+	}
+
+	newAccessToken, err := jwtManager.GenerateAccessToken(tokenInfo)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Token refreshed successfully",
+		"data": gin.H{
+			"access_token": newAccessToken,
+			"token_type":   "Bearer",
+			"expires_in":   cfg.JWT.AccessTokenExpire,
+		},
+	})
 }
 
 func PortalGetMeHandler(c *gin.Context) {
@@ -1582,20 +1952,605 @@ func RemoveAdministratorRoleHandler(c *gin.Context) {
 }
 
 // Permission management handlers
+// PermissionInfo 权限信息
+type PermissionInfo struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Code          string `json:"code"`
+	Resource      string `json:"resource"`
+	Action        string `json:"action"`
+	Description   string `json:"description"`
+	Category      string `json:"category"`
+	ApplicationID string `json:"application_id,omitempty"`
+	IsSystem      bool   `json:"is_system"`
+	Status        string `json:"status"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+// PermissionListResponse 权限列表响应
+type PermissionListResponse struct {
+	Items      []PermissionInfo `json:"items"`
+	Total      int64            `json:"total"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
+	TotalPages int              `json:"total_pages"`
+}
+
+// CreatePermissionRequest 创建权限请求
+type CreatePermissionRequest struct {
+	Name          string `json:"name" binding:"required"`
+	Code          string `json:"code" binding:"required"`
+	Resource      string `json:"resource" binding:"required"`
+	Action        string `json:"action" binding:"required"`
+	Description   string `json:"description"`
+	Category      string `json:"category" binding:"required"`
+	ApplicationID string `json:"application_id"`
+	IsSystem      bool   `json:"is_system"`
+}
+
+// UpdatePermissionRequest 更新权限请求
+type UpdatePermissionRequest struct {
+	Name          string `json:"name"`
+	Resource      string `json:"resource"`
+	Action        string `json:"action"`
+	Description   string `json:"description"`
+	Category      string `json:"category"`
+	ApplicationID string `json:"application_id"`
+	Status        string `json:"status"`
+}
+
 func GetPermissionsHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	search := c.Query("search")
+	status := c.Query("status")
+	category := c.Query("category")
+	resource := c.Query("resource")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	query := database.DB.Model(&models.Permission{})
+
+	// 搜索过滤
+	if search != "" {
+		query = query.Where("name LIKE ? OR code LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%")
+	}
+
+	// 状态过滤
+	if status != "" {
+		statusInt, err := strconv.Atoi(status)
+		if err == nil {
+			query = query.Where("status = ?", statusInt)
+		}
+	}
+
+	// 分类过滤
+	if category != "" {
+		query = query.Where("category = ?", category)
+	}
+
+	// 资源过滤
+	if resource != "" {
+		query = query.Where("resource = ?", resource)
+	}
+
+	// 获取总数
+	var total int64
+	query.Count(&total)
+
+	// 计算总页数
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	// 分页查询
+	offset := (page - 1) * pageSize
+	var permissions []models.Permission
+	err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&permissions).Error
+	if err != nil {
+		logger.ErrorError("Failed to get permissions", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 转换为响应格式
+	items := make([]PermissionInfo, len(permissions))
+	for i, permission := range permissions {
+		applicationID := ""
+		if permission.ApplicationID != nil {
+			applicationID = *permission.ApplicationID
+		}
+		items[i] = PermissionInfo{
+			ID:            permission.ID,
+			Name:          permission.Name,
+			Code:          permission.Code,
+			Resource:      permission.Resource,
+			Action:        permission.Action,
+			Description:   permission.Description,
+			Category:      permission.Category,
+			ApplicationID: applicationID,
+			IsSystem:      permission.IsSystem,
+			Status:        permission.Status.String(),
+			CreatedAt:     permission.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:     permission.UpdatedAt.Format("2006-01-02 15:04:05"),
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": i18n.Success,
+		"data": PermissionListResponse{
+			Items:      items,
+			Total:      total,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+		},
+	})
 }
 
 func CreatePermissionHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	var req CreatePermissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查权限代码是否已存在
+	var existingPermission models.Permission
+	if err := database.DB.Where("code = ?", req.Code).First(&existingPermission).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Permission code already exists",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 创建权限
+	permission := models.Permission{
+		Name:        req.Name,
+		Code:        req.Code,
+		Resource:    req.Resource,
+		Action:      req.Action,
+		Description: req.Description,
+		Category:    req.Category,
+		IsSystem:    req.IsSystem,
+		Status:      models.StatusActive,
+	}
+
+	if req.ApplicationID != "" {
+		permission.ApplicationID = &req.ApplicationID
+	}
+
+	if err := database.DB.Create(&permission).Error; err != nil {
+		logger.ErrorError("Failed to create permission", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission created successfully",
+		"data":    permission,
+	})
 }
 
 func UpdatePermissionHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	permissionID := c.Param("id")
+	if permissionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Permission ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	var req UpdatePermissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 查找权限
+	var permission models.Permission
+	if err := database.DB.Where("id = ?", permissionID).First(&permission).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Permission not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 更新权限
+	updates := make(map[string]interface{})
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.Resource != "" {
+		updates["resource"] = req.Resource
+	}
+	if req.Action != "" {
+		updates["action"] = req.Action
+	}
+	if req.Description != "" {
+		updates["description"] = req.Description
+	}
+	if req.Category != "" {
+		updates["category"] = req.Category
+	}
+	if req.ApplicationID != "" {
+		updates["application_id"] = req.ApplicationID
+	}
+	if req.Status != "" {
+		statusInt, err := strconv.Atoi(req.Status)
+		if err == nil {
+			updates["status"] = statusInt
+		}
+	}
+	updates["updated_at"] = time.Now()
+
+	if err := database.DB.Model(&permission).Updates(updates).Error; err != nil {
+		logger.ErrorError("Failed to update permission", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission updated successfully",
+		"data":    permission,
+	})
 }
 
 func DeletePermissionHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": i18n.APINotImplemented, "trade_id": c.GetString("trade_id")})
+	permissionID := c.Param("id")
+	if permissionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Permission ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 查找权限
+	var permission models.Permission
+	if err := database.DB.Where("id = ?", permissionID).First(&permission).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Permission not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否为系统权限
+	if permission.IsSystem {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Cannot delete system permission",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 软删除权限
+	if err := database.DB.Delete(&permission).Error; err != nil {
+		logger.ErrorError("Failed to delete permission", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission deleted successfully",
+		"data":    nil,
+	})
+}
+
+// RoleAssignmentInfo 角色分配信息
+type RoleAssignmentInfo struct {
+	ID          string `json:"id"`
+	UserID      string `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	RoleID      string `json:"role_id"`
+	RoleName    string `json:"role_name"`
+	RoleCode    string `json:"role_code"`
+	Status      string `json:"status"`
+	AssignedAt  string `json:"assigned_at"`
+}
+
+// RoleAssignmentListResponse 角色分配列表响应
+type RoleAssignmentListResponse struct {
+	Items      []RoleAssignmentInfo `json:"items"`
+	Total      int64                `json:"total"`
+	Page       int                  `json:"page"`
+	PageSize   int                  `json:"page_size"`
+	TotalPages int                  `json:"total_pages"`
+}
+
+// AssignRoleToUserRequest 分配角色给用户请求
+type AssignRoleToUserRequest struct {
+	UserID string `json:"user_id" binding:"required"`
+	RoleID string `json:"role_id" binding:"required"`
+}
+
+func GetRoleAssignmentsHandler(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	search := c.Query("search")
+	roleID := c.Query("role_id")
+	userID := c.Query("user_id")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	// 构建查询
+	query := `
+		SELECT 
+			ur.user_id,
+			u.username,
+			u.display_name,
+			u.email,
+			u.status,
+			ur.role_id,
+			r.name as role_name,
+			r.code as role_code,
+			NOW() as assigned_at
+		FROM user_roles ur
+		JOIN users u ON ur.user_id = u.id
+		JOIN roles r ON ur.role_id = r.id
+		WHERE u.deleted_at IS NULL AND r.deleted_at IS NULL
+	`
+
+	args := []interface{}{}
+
+	// 添加搜索条件
+	if search != "" {
+		query += " AND (u.username LIKE ? OR u.display_name LIKE ? OR r.name LIKE ?)"
+		searchPattern := "%" + search + "%"
+		args = append(args, searchPattern, searchPattern, searchPattern)
+	}
+
+	if roleID != "" {
+		query += " AND ur.role_id = ?"
+		args = append(args, roleID)
+	}
+
+	if userID != "" {
+		query += " AND ur.user_id = ?"
+		args = append(args, userID)
+	}
+
+	query += " ORDER BY u.username ASC"
+
+	// 执行查询
+	rows, err := database.DB.Raw(query, args...).Rows()
+	if err != nil {
+		logger.ErrorError("Failed to get role assignments", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	var assignments []RoleAssignmentInfo
+	for rows.Next() {
+		var assignment RoleAssignmentInfo
+		var statusInt int
+		var assignedAt time.Time
+
+		err := rows.Scan(
+			&assignment.UserID,
+			&assignment.Username,
+			&assignment.DisplayName,
+			&assignment.Email,
+			&statusInt,
+			&assignment.RoleID,
+			&assignment.RoleName,
+			&assignment.RoleCode,
+			&assignedAt,
+		)
+		if err != nil {
+			logger.ErrorError("Failed to scan role assignment row", zap.Error(err))
+			continue
+		}
+
+		assignment.ID = assignment.UserID + "_" + assignment.RoleID // 生成唯一ID
+		assignment.Status = models.Status(statusInt).String()
+		assignment.AssignedAt = assignedAt.Format("2006-01-02 15:04:05")
+		assignments = append(assignments, assignment)
+	}
+
+	// 手动分页
+	total := int64(len(assignments))
+	start := (page - 1) * pageSize
+	end := start + pageSize
+
+	if start >= len(assignments) {
+		assignments = []RoleAssignmentInfo{}
+	} else if end > len(assignments) {
+		assignments = assignments[start:]
+	} else {
+		assignments = assignments[start:end]
+	}
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": i18n.Success,
+		"data": RoleAssignmentListResponse{
+			Items:      assignments,
+			Total:      total,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+		},
+	})
+}
+
+func AssignRoleToUserHandler(c *gin.Context) {
+	var req AssignRoleToUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查用户是否存在
+	var user models.User
+	if err := database.DB.Where("id = ?", req.UserID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "User not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查角色是否存在
+	var role models.Role
+	if err := database.DB.Where("id = ?", req.RoleID).First(&role).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Role not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否已经分配了该角色
+	var existingUserRole int64
+	database.DB.Table("user_roles").Where("user_id = ? AND role_id = ?", req.UserID, req.RoleID).Count(&existingUserRole)
+	if existingUserRole > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "User already has this role",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 分配角色
+	userRole := struct {
+		UserID string `gorm:"column:user_id"`
+		RoleID string `gorm:"column:role_id"`
+	}{
+		UserID: req.UserID,
+		RoleID: req.RoleID,
+	}
+
+	if err := database.DB.Table("user_roles").Create(&userRole).Error; err != nil {
+		logger.ErrorError("Failed to assign role to user", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Role assigned successfully",
+		"data":    nil,
+	})
+}
+
+func RemoveRoleFromUserHandler(c *gin.Context) {
+	userID := c.Param("userID")
+	roleID := c.Param("roleID")
+
+	if userID == "" || roleID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "User ID and Role ID are required",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否为系统管理员角色
+	var role models.Role
+	if err := database.DB.Where("id = ?", roleID).First(&role).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Role not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否为系统角色
+	if role.IsSystem && role.Code == "SYSTEM_ADMIN" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Cannot remove system admin role",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 移除角色
+	if err := database.DB.Table("user_roles").Where("user_id = ? AND role_id = ?", userID, roleID).Delete(&struct{}{}).Error; err != nil {
+		logger.ErrorError("Failed to remove role from user", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Role removed successfully",
+		"data":    nil,
+	})
 }
 
 // Application management handlers
@@ -1704,20 +2659,24 @@ func CreateApplicationHandler(c *gin.Context) {
 	clientID := utils.GenerateTradeIDString("client")
 	clientSecret := utils.GenerateTradeIDString("secret")
 	appCode := utils.GenerateTradeIDString("app")
-	
+
 	application := models.Application{
-		BaseModel:   models.BaseModel{ID: utils.GenerateTradeIDString("app")},
-		Name:        req.Name,
-		Code:        appCode, // 使用生成的唯一code
-		Description: req.Description,
-		GroupID:     &req.GroupID,
-		ClientID:    clientID,
+		BaseModel:    models.BaseModel{ID: utils.GenerateTradeIDString("app")},
+		Name:         req.Name,
+		Code:         appCode, // 使用生成的唯一code
+		Description:  req.Description,
+		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		Status:      models.Status(req.Status),
-		HomePageURL: req.HomepageURL,
-		Logo:        req.LogoURL,
-		Protocol:    req.Type,
-		AppType:     "web", // 默认web类型
+		Status:       models.Status(req.Status),
+		HomePageURL:  req.HomepageURL,
+		Logo:         req.LogoURL,
+		Protocol:     req.Type,
+		AppType:      "web", // 默认web类型
+	}
+
+	// 只有当提供了有效的GroupID时才设置
+	if req.GroupID != "" {
+		application.GroupID = &req.GroupID
 	}
 
 	if err := database.DB.Create(&application).Error; err != nil {
@@ -1757,6 +2716,35 @@ func UpdateApplicationHandler(c *gin.Context) {
 		HomepageURL string                 `json:"homepageUrl"`
 		LogoURL     string                 `json:"logoUrl"`
 		Config      map[string]interface{} `json:"config"`
+
+		// OAuth2/OIDC配置字段
+		ClientID        string `json:"clientId"`
+		ClientSecret    string `json:"clientSecret"`
+		RedirectURIs    string `json:"redirectUris"`
+		Scopes          string `json:"scopes"`
+		GrantTypes      string `json:"grantTypes"`
+		ResponseTypes   string `json:"responseTypes"`
+		AccessTokenTTL  int    `json:"accessTokenTTL"`
+		RefreshTokenTTL int    `json:"refreshTokenTTL"`
+
+		// SAML配置字段
+		EntityID           string `json:"entity_id"`
+		AcsURL             string `json:"acs_url"`
+		SloURL             string `json:"slo_url"`
+		Certificate        string `json:"certificate"`
+		SignatureAlgorithm string `json:"signature_algorithm"`
+		DigestAlgorithm    string `json:"digest_algorithm"`
+
+		// CAS配置字段
+		ServiceURL string `json:"serviceUrl"`
+		Gateway    bool   `json:"gateway"`
+		Renew      bool   `json:"renew"`
+
+		// LDAP配置字段
+		LdapURL      string `json:"ldapUrl"`
+		BaseDN       string `json:"baseDn"`
+		BindDN       string `json:"bindDn"`
+		BindPassword string `json:"bindPassword"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1791,17 +2779,98 @@ func UpdateApplicationHandler(c *gin.Context) {
 		}
 	}
 
-	// 更新字段
-	application.Name = req.Name
-	application.Code = req.Name // 使用name作为code
-	application.Description = req.Description
-	application.GroupID = &req.GroupID
-	application.Status = models.Status(req.Status)
-	application.HomePageURL = req.HomepageURL
-	application.Logo = req.LogoURL
-	application.Protocol = req.Type
+	// 准备更新数据
+	updateData := map[string]interface{}{
+		"name":          req.Name,
+		"code":          req.Name, // 使用name作为code
+		"description":   req.Description,
+		"status":        models.Status(req.Status),
+		"home_page_url": req.HomepageURL,
+		"logo":          req.LogoURL,
+		"protocol":      req.Type,
+	}
 
-	if err := database.DB.Save(&application).Error; err != nil {
+	// 只有当提供了新的GroupID时才更新
+	if req.GroupID != "" {
+		updateData["group_id"] = req.GroupID
+	}
+
+	// 更新OAuth2/OIDC配置字段
+	if req.Type == "oauth2" || req.Type == "oidc" {
+		if req.ClientID != "" {
+			updateData["client_id"] = req.ClientID
+		}
+		if req.ClientSecret != "" {
+			updateData["client_secret"] = req.ClientSecret
+		}
+		if req.RedirectURIs != "" {
+			updateData["redirect_uris"] = req.RedirectURIs
+		}
+		if len(req.Scopes) > 0 {
+			updateData["scopes"] = req.Scopes
+		}
+		if req.GrantTypes != "" {
+			updateData["grant_types"] = req.GrantTypes
+		}
+		if req.ResponseTypes != "" {
+			updateData["response_types"] = req.ResponseTypes
+		}
+		if req.AccessTokenTTL > 0 {
+			updateData["access_token_ttl"] = req.AccessTokenTTL
+		}
+		if req.RefreshTokenTTL > 0 {
+			updateData["refresh_token_ttl"] = req.RefreshTokenTTL
+		}
+	}
+
+	// 更新SAML配置字段
+	if req.Type == "saml" {
+		if req.EntityID != "" {
+			updateData["entity_id"] = req.EntityID
+		}
+		if req.AcsURL != "" {
+			updateData["acs_url"] = req.AcsURL
+		}
+		if req.SloURL != "" {
+			updateData["slo_url"] = req.SloURL
+		}
+		if req.Certificate != "" {
+			updateData["certificate"] = req.Certificate
+		}
+		if req.SignatureAlgorithm != "" {
+			updateData["signature_algorithm"] = req.SignatureAlgorithm
+		}
+		if req.DigestAlgorithm != "" {
+			updateData["digest_algorithm"] = req.DigestAlgorithm
+		}
+	}
+
+	// 更新CAS配置字段
+	if req.Type == "cas" {
+		if req.ServiceURL != "" {
+			updateData["service_url"] = req.ServiceURL
+		}
+		updateData["gateway"] = req.Gateway
+		updateData["renew"] = req.Renew
+	}
+
+	// 更新LDAP配置字段
+	if req.Type == "ldap" {
+		if req.LdapURL != "" {
+			updateData["ldap_url"] = req.LdapURL
+		}
+		if req.BaseDN != "" {
+			updateData["base_dn"] = req.BaseDN
+		}
+		if req.BindDN != "" {
+			updateData["bind_dn"] = req.BindDN
+		}
+		if req.BindPassword != "" {
+			updateData["bind_password"] = req.BindPassword
+		}
+	}
+
+	if err := database.DB.Model(&application).Updates(updateData).Error; err != nil {
 		logger.ErrorError("Failed to update application", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -2281,16 +3350,12 @@ func GetAuditLogsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
 		"message": "Success",
-		"items":   logs,  // 前端期望的数据格式
-		"total":   total, // 前端期望的总数格式
 		"data": gin.H{
-			"logs": logs,
-			"pagination": gin.H{
-				"page":       page,
-				"page_size":  pageSize,
-				"total":      total,
-				"total_page": int(math.Ceil(float64(total) / float64(pageSize))),
-			},
+			"items":       logs,
+			"total":       total,
+			"page":        page,
+			"page_size":   pageSize,
+			"total_pages": int(math.Ceil(float64(total) / float64(pageSize))),
 		},
 	})
 }

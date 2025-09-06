@@ -28,7 +28,7 @@ export const useSiteStore = defineStore('site', () => {
       const settings = await systemApi.getSiteSettings()
       siteName.value = settings.site_name || 'EIAM'
       siteUrl.value = settings.site_url || ''
-      logoUrl.value = settings.logo_url || '/logo.svg'
+      logoUrl.value = settings.logo || '/logo.svg'
       contactEmail.value = settings.contact_email || ''
       supportEmail.value = settings.support_email || ''
       description.value = settings.description || ''
@@ -42,6 +42,7 @@ export const useSiteStore = defineStore('site', () => {
     if (settings.site_name) siteName.value = settings.site_name
     if (settings.site_url) siteUrl.value = settings.site_url
     if (settings.logo_url) logoUrl.value = settings.logo_url
+    if (settings.logo) logoUrl.value = settings.logo
     if (settings.contact_email) contactEmail.value = settings.contact_email
     if (settings.support_email) supportEmail.value = settings.support_email
     if (settings.description) description.value = settings.description

@@ -53,6 +53,7 @@ type SecuritySettings struct {
 	SessionTimeout        int `json:"session_timeout"`
 	MaxConcurrentSessions int `json:"max_concurrent_sessions"`
 	RememberMeDays        int `json:"remember_me_days"`
+	AllowMultiDeviceLogin bool `json:"allow_multi_device_login"` // 是否允许多设备同时登录
 
 	// 2FA配置
 	Enable2FA           bool `json:"enable_2fa"`

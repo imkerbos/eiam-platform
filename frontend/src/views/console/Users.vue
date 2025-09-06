@@ -161,7 +161,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
-import type { User, PaginatedResponse } from '@/types/api'
+import type { User } from '@/types/api'
 import { userApi, organizationApi } from '@/api/index'
 import type { CreateUserRequest, UpdateUserRequest } from '@/api/users'
 import { getUserSessions, forceLogoutUser } from '@/api/session'
@@ -445,7 +445,7 @@ const handleModalCancel = () => {
   resetForm()
 }
 
-const resetPassword = async (user: User) => {
+const resetPassword = async (_user: User) => {
   try {
     // TODO: Implement API call
     message.success('Password reset email sent')
@@ -488,7 +488,7 @@ const loadUserSessions = async (userId: string) => {
   }
 }
 
-const forceLogoutSession = async (sessionId: string) => {
+const forceLogoutSession = async (_sessionId: string) => {
   try {
     // Note: Currently we can only force logout all sessions for a user
     // Individual session logout would require additional backend API

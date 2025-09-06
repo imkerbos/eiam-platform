@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { TokenManager } from '@/utils/storage'
 import { useUserStore } from '@/stores/user'
+import { useSiteStore } from '@/stores/site'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -119,8 +120,10 @@ const router = createRouter({
 
 // Navigation guard
 router.beforeEach(async (to, from, next) => {
-  // Set page title
-  document.title = to.meta.title ? `${to.meta.title} - EIAM Platform` : 'EIAM Platform'
+  // Set page title - 使用动态站点名称
+  const siteStore = useSiteStore()
+  const siteName = siteStore.siteName || 'EIAM Platform'
+  document.title = to.meta.title ? `${to.meta.title} - ${siteName}` : siteName
   
   // Check authentication - 使用新的安全存储
   const token = TokenManager.getAccessToken()

@@ -108,13 +108,18 @@ export const auditApi = {
     return http.get<UserSessionListResponse>(`/console/sessions?${queryParams.toString()}`)
   },
 
-  // Terminate user session
-  terminateSession: (sessionId: string) => {
-    return http.delete(`/console/sessions/${sessionId}`)
+  // Terminate user session (force logout user)
+  terminateSession: (userId: string) => {
+    return http.delete(`/console/sessions/users/${userId}`)
   },
 
   // Terminate all sessions for a user
   terminateAllUserSessions: (userId: string) => {
-    return http.delete(`/console/sessions/user/${userId}`)
+    return http.delete(`/console/sessions/users/${userId}`)
+  },
+
+  // Terminate all sessions for all users
+  terminateAllSessions: () => {
+    return http.post(`/console/sessions/force-logout-all`)
   }
 }

@@ -103,9 +103,10 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 	sessions.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
 	sessions.Use(middleware.AdminMiddleware())
 	{
-		sessions.GET("", handlers.GetAllSessionsHandler)                   // 获取所有在线会话
-		sessions.GET("/users/:userID", handlers.GetUserSessionsHandler)    // 获取用户会话列表
-		sessions.DELETE("/users/:userID", handlers.ForceLogoutUserHandler) // 强制用户下线
+		sessions.GET("", handlers.GetAllSessionsHandler)                        // 获取所有在线会话
+		sessions.GET("/users/:userID", handlers.GetUserSessionsHandler)         // 获取用户会话列表
+		sessions.DELETE("/users/:userID", handlers.ForceLogoutUserHandler)      // 强制用户下线
+		sessions.POST("/force-logout-all", handlers.ForceLogoutAllUsersHandler) // 强制所有用户下线
 	}
 
 	// 用户管理（需要管理员权限）
@@ -165,6 +166,16 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		permissions.DELETE("/:id", handlers.DeletePermissionHandler)
 	}
 
+	// 角色分配管理（需要管理员权限）
+	roleAssignments := console.Group("/role-assignments")
+	roleAssignments.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	roleAssignments.Use(middleware.AdminMiddleware())
+	{
+		roleAssignments.GET("", handlers.GetRoleAssignmentsHandler)
+		roleAssignments.POST("", handlers.AssignRoleToUserHandler)
+		roleAssignments.DELETE("/:userID/:roleID", handlers.RemoveRoleFromUserHandler)
+	}
+
 	// 应用管理（需要管理员权限）
 	applications := console.Group("/applications")
 	applications.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
@@ -185,6 +196,14 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		appGroups.POST("", handlers.CreateApplicationGroupHandler)
 		appGroups.PUT("/:id", handlers.UpdateApplicationGroupHandler)
 		appGroups.DELETE("/:id", handlers.DeleteApplicationGroupHandler)
+	}
+
+	// 添加别名路由以支持前端调用
+	applicationsAlias := console.Group("/applications")
+	applicationsAlias.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	applicationsAlias.Use(middleware.AdminMiddleware())
+	{
+		applicationsAlias.GET("/groups", handlers.GetApplicationGroupsHandler)
 	}
 
 	// 系统设置管理（需要管理员权限）

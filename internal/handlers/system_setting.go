@@ -13,16 +13,18 @@ import (
 	"eiam-platform/pkg/database"
 	"eiam-platform/pkg/i18n"
 	"eiam-platform/pkg/logger"
+	"eiam-platform/pkg/redis"
 	"eiam-platform/pkg/utils"
+
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"errors"
-	"path/filepath"
-	"strings"
-	"os"
 )
 
 // GetSystemSettingsHandler 获取系统设置
@@ -77,7 +79,7 @@ func UpdateSystemSettingsHandler(c *gin.Context) {
 		valueStr := convertToString(value)
 
 		var setting models.SystemSetting
-		result := database.DB.Where("key = ?", key).First(&setting)
+		result := database.DB.Where("`key` = ?", key).First(&setting)
 
 		if result.Error == gorm.ErrRecordNotFound {
 			// 创建新设置
@@ -254,6 +256,10 @@ func GetSecuritySettingsHandler(c *gin.Context) {
 			if num, ok := value.(int); ok {
 				securitySettings.MaxConcurrentSessions = num
 			}
+		case "allow_multi_device_login":
+			if b, ok := value.(bool); ok {
+				securitySettings.AllowMultiDeviceLogin = b
+			}
 		case "remember_me_days":
 			if num, ok := value.(int); ok {
 				securitySettings.RememberMeDays = num
@@ -360,15 +366,18 @@ func UpdateSiteSettingsHandler(c *gin.Context) {
 
 	for _, setting := range settings {
 		var existingSetting models.SystemSetting
-		if err := database.DB.Where("key = ? AND category = ?", setting.key, "site").First(&existingSetting).Error; err != nil {
+		if err := database.DB.Where("`key` = ? AND category = ?", setting.key, "site").First(&existingSetting).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// 创建新设置
+				now := time.Now()
 				newSetting := models.SystemSetting{
-					ID:       utils.GenerateTradeIDString("setting"),
-					Key:      setting.key,
-					Value:    setting.value,
-					Category: "site",
-					Type:     "string",
+					ID:        utils.GenerateTradeIDString("setting"),
+					Key:       setting.key,
+					Value:     setting.value,
+					Category:  "site",
+					Type:      "string",
+					CreatedAt: now,
+					UpdatedAt: now,
 				}
 				if err := database.DB.Create(&newSetting).Error; err != nil {
 					logger.ErrorError("Failed to create setting", zap.Error(err), zap.String("key", setting.key))
@@ -391,6 +400,12 @@ func UpdateSiteSettingsHandler(c *gin.Context) {
 		} else {
 			// 更新现有设置
 			existingSetting.Value = setting.value
+			now := time.Now()
+			existingSetting.UpdatedAt = now
+			// 如果created_at是NULL，也设置它
+			if existingSetting.CreatedAt.IsZero() {
+				existingSetting.CreatedAt = now
+			}
 			if err := database.DB.Save(&existingSetting).Error; err != nil {
 				logger.ErrorError("Failed to update setting", zap.Error(err), zap.String("key", setting.key))
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -413,31 +428,32 @@ func UpdateSiteSettingsHandler(c *gin.Context) {
 // UpdateSecuritySettingsHandler 更新安全设置
 func UpdateSecuritySettingsHandler(c *gin.Context) {
 	var req struct {
-		MinPasswordLength           int  `json:"min_password_length"`
-		MaxPasswordLength           int  `json:"max_password_length"`
-		PasswordExpiryDays          int  `json:"password_expiry_days"`
-		RequireUppercase            bool `json:"require_uppercase"`
-		RequireLowercase            bool `json:"require_lowercase"`
-		RequireNumbers              bool `json:"require_numbers"`
-		RequireSpecialChars         bool `json:"require_special_chars"`
-		PasswordHistoryCount        int  `json:"password_history_count"`
-		SessionTimeout              int  `json:"session_timeout"`
-		MaxConcurrentSessions       int  `json:"max_concurrent_sessions"`
-		RememberMeDays              int  `json:"remember_me_days"`
-		Enable2FA                   bool `json:"enable_2fa"`
-		Require2FAForAdmins         bool `json:"require_2fa_for_admins"`
-		AllowBackupCodes            bool `json:"allow_backup_codes"`
-		EnableTOTP                  bool `json:"enable_totp"`
-		EnableSMS                   bool `json:"enable_sms"`
-		EnableEmail                 bool `json:"enable_email"`
-		MaxLoginAttempts            int  `json:"max_login_attempts"`
-		LockoutDuration             int  `json:"lockout_duration"`
-		EnableIPWhitelist           bool `json:"enable_ip_whitelist"`
-		EnableGeolocation           bool `json:"enable_geolocation"`
-		EnableDeviceFingerprinting  bool `json:"enable_device_fingerprinting"`
-		NotifyFailedLogins          bool `json:"notify_failed_logins"`
-		NotifyNewDevices            bool `json:"notify_new_devices"`
-		NotifyPasswordChanges       bool `json:"notify_password_changes"`
+		MinPasswordLength          int  `json:"min_password_length"`
+		MaxPasswordLength          int  `json:"max_password_length"`
+		PasswordExpiryDays         int  `json:"password_expiry_days"`
+		RequireUppercase           bool `json:"require_uppercase"`
+		RequireLowercase           bool `json:"require_lowercase"`
+		RequireNumbers             bool `json:"require_numbers"`
+		RequireSpecialChars        bool `json:"require_special_chars"`
+		PasswordHistoryCount       int  `json:"password_history_count"`
+		SessionTimeout             int  `json:"session_timeout"`
+		MaxConcurrentSessions      int  `json:"max_concurrent_sessions"`
+		AllowMultiDeviceLogin      bool `json:"allow_multi_device_login"`
+		RememberMeDays             int  `json:"remember_me_days"`
+		Enable2FA                  bool `json:"enable_2fa"`
+		Require2FAForAdmins        bool `json:"require_2fa_for_admins"`
+		AllowBackupCodes           bool `json:"allow_backup_codes"`
+		EnableTOTP                 bool `json:"enable_totp"`
+		EnableSMS                  bool `json:"enable_sms"`
+		EnableEmail                bool `json:"enable_email"`
+		MaxLoginAttempts           int  `json:"max_login_attempts"`
+		LockoutDuration            int  `json:"lockout_duration"`
+		EnableIPWhitelist          bool `json:"enable_ip_whitelist"`
+		EnableGeolocation          bool `json:"enable_geolocation"`
+		EnableDeviceFingerprinting bool `json:"enable_device_fingerprinting"`
+		NotifyFailedLogins         bool `json:"notify_failed_logins"`
+		NotifyNewDevices           bool `json:"notify_new_devices"`
+		NotifyPasswordChanges      bool `json:"notify_password_changes"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -466,6 +482,7 @@ func UpdateSecuritySettingsHandler(c *gin.Context) {
 		{"password_history_count", req.PasswordHistoryCount, "number"},
 		{"session_timeout", req.SessionTimeout, "number"},
 		{"max_concurrent_sessions", req.MaxConcurrentSessions, "number"},
+		{"allow_multi_device_login", req.AllowMultiDeviceLogin, "boolean"},
 		{"remember_me_days", req.RememberMeDays, "number"},
 		{"enable_2fa", req.Enable2FA, "boolean"},
 		{"require_2fa_for_admins", req.Require2FAForAdmins, "boolean"},
@@ -485,15 +502,18 @@ func UpdateSecuritySettingsHandler(c *gin.Context) {
 
 	for _, setting := range settings {
 		var existingSetting models.SystemSetting
-		if err := database.DB.Where("key = ? AND category = ?", setting.key, "security").First(&existingSetting).Error; err != nil {
+		if err := database.DB.Where("`key` = ? AND category = ?", setting.key, "security").First(&existingSetting).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// 创建新设置
+				now := time.Now()
 				newSetting := models.SystemSetting{
-					ID:       utils.GenerateTradeIDString("setting"),
-					Key:      setting.key,
-					Value:    convertToString(setting.value),
-					Category: "security",
-					Type:     setting.typ,
+					ID:        utils.GenerateTradeIDString("setting"),
+					Key:       setting.key,
+					Value:     convertToString(setting.value),
+					Category:  "security",
+					Type:      setting.typ,
+					CreatedAt: now,
+					UpdatedAt: now,
 				}
 				if err := database.DB.Create(&newSetting).Error; err != nil {
 					logger.ErrorError("Failed to create security setting", zap.Error(err), zap.String("key", setting.key))
@@ -505,10 +525,15 @@ func UpdateSecuritySettingsHandler(c *gin.Context) {
 					return
 				}
 			} else {
-				logger.ErrorError("Failed to check existing security setting", zap.Error(err), zap.String("key", setting.key))
+				logger.ErrorError("Failed to check existing security setting",
+					zap.Error(err),
+					zap.String("key", setting.key),
+					zap.String("category", "security"),
+					zap.String("error_type", fmt.Sprintf("%T", err)),
+				)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"code":    500,
-					"message": "Failed to check existing security setting",
+					"message": fmt.Sprintf("Database error: %v", err),
 					"data":    nil,
 				})
 				return
@@ -516,6 +541,12 @@ func UpdateSecuritySettingsHandler(c *gin.Context) {
 		} else {
 			// 更新现有设置
 			existingSetting.Value = convertToString(setting.value)
+			now := time.Now()
+			existingSetting.UpdatedAt = now
+			// 如果created_at是NULL，也设置它
+			if existingSetting.CreatedAt.IsZero() {
+				existingSetting.CreatedAt = now
+			}
 			if err := database.DB.Save(&existingSetting).Error; err != nil {
 				logger.ErrorError("Failed to update security setting", zap.Error(err), zap.String("key", setting.key))
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -527,6 +558,9 @@ func UpdateSecuritySettingsHandler(c *gin.Context) {
 			}
 		}
 	}
+
+	// 同步关键配置到Redis，供会话管理器使用
+	syncSecuritySettingsToRedis()
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
@@ -1051,7 +1085,7 @@ func GetPublicSiteInfoHandler(c *gin.Context) {
 	}
 
 	// 获取logo URL
-	if err := database.DB.Where("category = ? AND `key` = ?", "site", "logo_url").First(&logoSetting).Error; err != nil {
+	if err := database.DB.Where("category = ? AND `key` = ?", "site", "logo").First(&logoSetting).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.ErrorError("Failed to get logo setting", zap.Error(err))
 		}
@@ -1115,7 +1149,7 @@ func UploadLogoHandler(c *gin.Context) {
 	// 生成唯一文件名
 	ext := filepath.Ext(file.Filename)
 	filename := fmt.Sprintf("logo_%s%s", utils.GenerateTradeIDString("logo"), ext)
-	
+
 	// 确保上传目录存在
 	uploadDir := "uploads/logos"
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
@@ -1153,10 +1187,13 @@ func UploadLogoHandler(c *gin.Context) {
 
 	// 查找现有设置或创建新设置
 	var existingSetting models.SystemSetting
-	if err := database.DB.Where("key = ? AND category = ?", "logo", "site").First(&existingSetting).Error; err != nil {
+	if err := database.DB.Where("`key` = ? AND category = ?", "logo", "site").First(&existingSetting).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// 创建新设置
+			now := time.Now()
 			setting.ID = utils.GenerateTradeIDString("setting")
+			setting.CreatedAt = now
+			setting.UpdatedAt = now
 			if err := database.DB.Create(&setting).Error; err != nil {
 				logger.ErrorError("Failed to create logo setting", zap.Error(err))
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -1208,4 +1245,28 @@ func isValidImageFile(filename string) bool {
 		}
 	}
 	return false
+}
+
+// syncSecuritySettingsToRedis 同步安全设置到Redis
+func syncSecuritySettingsToRedis() {
+	ctx := context.Background()
+
+	// 获取多设备登录配置
+	var setting models.SystemSetting
+	if err := database.DB.Where("`key` = ? AND category = ?", "allow_multi_device_login", "security").First(&setting).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.ErrorError("Failed to get multi-device login setting", zap.Error(err))
+		}
+		return
+	}
+
+	// 同步到Redis
+	configKey := "system:security:allow_multi_device_login"
+	if err := redis.RDB.Set(ctx, configKey, setting.Value, 0).Err(); err != nil {
+		logger.ErrorError("Failed to sync multi-device login setting to Redis", zap.Error(err))
+	} else {
+		logger.Info("Multi-device login setting synced to Redis",
+			zap.String("key", configKey),
+			zap.String("value", setting.Value))
+	}
 }

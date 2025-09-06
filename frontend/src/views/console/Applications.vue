@@ -222,6 +222,31 @@
               <a-select-option value="phone">phone</a-select-option>
             </a-select>
           </a-form-item>
+          <a-form-item label="Grant Types" name="grantTypes">
+            <a-select v-model:value="formData.config.grantTypes" mode="multiple" placeholder="Select grant types">
+              <a-select-option value="authorization_code">Authorization Code</a-select-option>
+              <a-select-option value="refresh_token">Refresh Token</a-select-option>
+              <a-select-option value="client_credentials">Client Credentials</a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item label="Response Types" name="responseTypes">
+            <a-select v-model:value="formData.config.responseTypes" mode="multiple" placeholder="Select response types">
+              <a-select-option value="code">Code</a-select-option>
+              <a-select-option value="token">Token</a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="Access Token TTL (seconds)" name="accessTokenTTL">
+                <a-input-number v-model:value="formData.config.accessTokenTTL" :min="1" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="Refresh Token TTL (seconds)" name="refreshTokenTTL">
+                <a-input-number v-model:value="formData.config.refreshTokenTTL" :min="1" />
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
         
         <!-- LDAP Configuration -->
@@ -329,16 +354,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
-import type { Application, Pagination } from '@/types/api'
+import type { Application } from '@/api/applications'
 import { applicationApi } from '@/api/applications'
 
 // Data
 const loading = ref(false)
-const applications = ref<Application[]>([])
-const appGroups = ref([])
+const applications = ref<any[]>([])
+const appGroups = ref<any[]>([])
 const modalVisible = ref(false)
 const configModalVisible = ref(false)
 const modalTitle = ref('Add Application')
@@ -351,7 +376,7 @@ const formData = reactive({
   name: '',
   type: 'oauth2',
   description: '',
-  groupId: undefined,
+  groupId: '' as string | undefined,
   status: 'active',
   homepageUrl: '',
   logoUrl: '',
@@ -361,6 +386,10 @@ const formData = reactive({
     clientSecret: '',
     redirectUris: '',
     scopes: [],
+    grantTypes: '',
+    responseTypes: '',
+    accessTokenTTL: 3600,
+    refreshTokenTTL: 604800,
     // SAML fields
     entityId: '',
     acsUrl: '',
@@ -403,11 +432,16 @@ const formRules = {
   name: [{ required: true, message: 'Please input application name!' }],
   type: [{ required: true, message: 'Please select application type!' }],
   status: [{ required: true, message: 'Please select status!' }],
+  groupId: [{ required: false }], // 应用组是可选的
   // 配置字段验证规则
   'config.clientId': [{ required: false }],
   'config.clientSecret': [{ required: false }],
   'config.redirectUris': [{ required: false }],
   'config.scopes': [{ required: false }],
+  'config.grantTypes': [{ required: false }],
+  'config.responseTypes': [{ required: false }],
+  'config.accessTokenTTL': [{ required: false }],
+  'config.refreshTokenTTL': [{ required: false }],
   'config.entityId': [{ required: false }],
   'config.acsUrl': [{ required: false }],
   'config.sloUrl': [{ required: false }],
@@ -423,7 +457,7 @@ const formRules = {
   'config.bindPassword': [{ required: false }]
 }
 
-const pagination = reactive<Pagination>({
+const pagination = reactive({
   current: 1,
   pageSize: 10,
   total: 0,
@@ -523,28 +557,32 @@ const showAddAppModal = () => {
   modalVisible.value = true
 }
 
-const editApp = (app: Application) => {
+const editApp = (app: any) => {
   modalTitle.value = 'Edit Application'
   editingApp.value = app
   Object.assign(formData, {
     name: app.name,
-    type: app.protocol,
+    type: app.protocol || app.type,
     description: app.description,
     groupId: app.group_id,
     status: app.status === 1 ? 'active' : 'inactive',
-    homepageUrl: app.home_page_url,
+    homepageUrl: app.home_page_url || app.homepage_url,
     logoUrl: app.logo
   })
   modalVisible.value = true
 }
 
-const onTypeChange = (type: string) => {
+const onTypeChange = () => {
   // Reset config when type changes
   formData.config = {
     clientId: '',
     clientSecret: '',
     redirectUris: '',
     scopes: [],
+    grantTypes: '',
+    responseTypes: '',
+    accessTokenTTL: 3600,
+    refreshTokenTTL: 604800,
     entityId: '',
     acsUrl: '',
     sloUrl: '',
@@ -575,6 +613,10 @@ const resetForm = () => {
       clientSecret: '',
       redirectUris: '',
       scopes: [],
+      grantTypes: '',
+      responseTypes: '',
+      accessTokenTTL: 3600,
+      refreshTokenTTL: 604800,
       entityId: '',
       acsUrl: '',
       sloUrl: '',
@@ -601,11 +643,50 @@ const handleModalOk = async () => {
       name: formData.name,
       type: formData.type,
       description: formData.description,
-      groupId: formData.groupId,
       status: formData.status === 'active' ? 1 : 0,
       homepageUrl: formData.homepageUrl,
       logoUrl: formData.logoUrl,
-      config: formData.config
+      // 根据应用类型添加相应的配置字段
+      ...(formData.type === 'oauth2' && {
+        clientId: formData.config.clientId,
+        clientSecret: formData.config.clientSecret,
+        redirectUris: formData.config.redirectUris,
+        scopes: formData.config.scopes
+      }),
+      ...(formData.type === 'saml' && {
+        entity_id: formData.config.entityId,
+        acs_url: formData.config.acsUrl,
+        slo_url: formData.config.sloUrl,
+        certificate: formData.config.certificate,
+        signature_algorithm: formData.config.signatureAlgorithm,
+        digest_algorithm: formData.config.digestAlgorithm
+      }),
+      ...(formData.type === 'cas' && {
+        serviceUrl: formData.config.serviceUrl,
+        gateway: formData.config.gateway,
+        renew: formData.config.renew
+      }),
+      ...(formData.type === 'oidc' && {
+        clientId: formData.config.clientId,
+        clientSecret: formData.config.clientSecret,
+        redirectUris: formData.config.redirectUris,
+        scopes: formData.config.scopes,
+        grantTypes: formData.config.grantTypes,
+        responseTypes: formData.config.responseTypes,
+        accessTokenTTL: formData.config.accessTokenTTL,
+        refreshTokenTTL: formData.config.refreshTokenTTL
+      }),
+      ...(formData.type === 'ldap' && {
+        ldapUrl: formData.config.ldapUrl,
+        baseDn: formData.config.baseDn,
+        bindDn: formData.config.bindDn,
+        bindPassword: formData.config.bindPassword
+      })
+    }
+    
+    // 只有当groupId不为空时才添加到请求中
+    if (formData.groupId && formData.groupId.trim() !== '') {
+      (requestData as any).groupId = formData.groupId
     }
     
     if (editingApp.value) {

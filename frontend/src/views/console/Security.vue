@@ -146,6 +146,14 @@
                   <a-input-number v-model:value="sessionForm.rememberMeDays" :min="1" :max="90" style="width: 100%" />
                 </a-form-item>
               </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <a-checkbox v-model:checked="sessionForm.allowMultiDeviceLogin">
+                    Allow Multi-Device Login
+                  </a-checkbox>
+                  <div class="form-hint">Enable users to login from multiple devices simultaneously</div>
+                </a-form-item>
+              </a-col>
             </a-row>
 
             <a-form-item>
@@ -316,7 +324,8 @@ const passwordForm = reactive({
 const sessionForm = reactive({
   timeout: 30,
   maxSessions: 3,
-  rememberMeDays: 30
+  rememberMeDays: 30,
+  allowMultiDeviceLogin: false
 })
 
 const twoFAForm = reactive({
@@ -352,24 +361,27 @@ const loadSecuritySettings = async () => {
     const passwordPolicy = await systemApi.getPasswordPolicy()
     
     // Update password form with loaded data
+    // 注意：由于响应拦截器，passwordPolicy已经是data.data的内容
     Object.assign(passwordForm, {
-      minLength: passwordPolicy.data.min_length,
-      maxLength: passwordPolicy.data.max_length,
-      expiryDays: passwordPolicy.data.expiry_days,
-      historyCount: passwordPolicy.data.history_count,
-      requireUppercase: passwordPolicy.data.require_uppercase,
-      requireLowercase: passwordPolicy.data.require_lowercase,
-      requireNumbers: passwordPolicy.data.require_numbers,
-      requireSpecialChars: passwordPolicy.data.require_special_chars
+      minLength: passwordPolicy.min_length,
+      maxLength: passwordPolicy.max_length,
+      expiryDays: passwordPolicy.expiry_days,
+      historyCount: passwordPolicy.history_count,
+      requireUppercase: passwordPolicy.require_uppercase,
+      requireLowercase: passwordPolicy.require_lowercase,
+      requireNumbers: passwordPolicy.require_numbers,
+      requireSpecialChars: passwordPolicy.require_special_chars
     })
     
     // Load other security settings (if available)
     try {
       const settings = await systemApi.getSecuritySettings()
+      // 注意：由于响应拦截器，settings已经是data.data的内容
       Object.assign(sessionForm, {
         timeout: settings.session_timeout,
         maxSessions: settings.max_concurrent_sessions,
-        rememberMeDays: settings.remember_me_days
+        rememberMeDays: settings.remember_me_days,
+        allowMultiDeviceLogin: settings.allow_multi_device_login
       })
       
       Object.assign(twoFAForm, {
@@ -424,7 +436,8 @@ const savePasswordPolicy = async () => {
 const generatePassword = async () => {
   try {
     const response = await systemApi.generatePassword()
-    testPassword.value = response.data.password
+    // 注意：由于响应拦截器，response已经是data.data的内容
+    testPassword.value = response.password
     message.success('Password generated successfully')
   } catch (error) {
     message.error('Failed to generate password')
@@ -443,7 +456,8 @@ const validatePassword = async () => {
       password: testPassword.value,
       username: 'admin' // 可以根据需要修改
     })
-    validationResult.value = response.data
+    // 注意：由于响应拦截器，response已经是data.data的内容
+    validationResult.value = response
   } catch (error) {
     message.error('Failed to validate password')
   } finally {
@@ -453,10 +467,16 @@ const validatePassword = async () => {
 
 const saveSessionSettings = async () => {
   try {
+    // 获取当前的安全设置作为基础
+    const currentSettings = await systemApi.getSecuritySettings()
+    
+    // 更新会话相关的设置，保持其他设置不变
     const settings = {
+      ...currentSettings,
       session_timeout: sessionForm.timeout,
       max_concurrent_sessions: sessionForm.maxSessions,
-      remember_me_days: sessionForm.rememberMeDays
+      remember_me_days: sessionForm.rememberMeDays,
+      allow_multi_device_login: sessionForm.allowMultiDeviceLogin
     }
     
     await systemApi.updateSecuritySettings(settings)

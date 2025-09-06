@@ -219,7 +219,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, LoginOutlined, KeyOutlined, SafetyOutlined, ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, LoginOutlined, KeyOutlined, SafetyOutlined } from '@ant-design/icons-vue'
 import { http } from '@/api/request'
 import { useUserStore } from '@/stores/user'
 import UserAvatar from '@/components/UserAvatar.vue'
@@ -305,7 +305,7 @@ const passwordRules = {
   confirmPassword: [
     { required: true, message: 'Please confirm new password!' },
     {
-      validator: (rule: any, value: string) => {
+      validator: (_rule: any, value: string) => {
         if (value !== passwordForm.newPassword) {
           return Promise.reject('Passwords do not match!')
         }

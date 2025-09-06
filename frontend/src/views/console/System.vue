@@ -168,7 +168,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import { systemApi } from '@/api/system'
 import type { AdministratorInfo, RoleInfo } from '@/api/system'
 import { userApi } from '@/api/users'
@@ -245,7 +245,8 @@ const securityForm = reactive({
   enableDeviceFingerprinting: true,
   notifyFailedLogins: true,
   notifyNewDevices: true,
-  notifyPasswordChanges: true
+  notifyPasswordChanges: true,
+  allowMultiDeviceLogin: false
 })
 
 // Form rules
@@ -261,10 +262,10 @@ const siteRules = {
   contactEmail: [{ required: true, message: 'Please enter contact email' }]
 }
 
-const securityRules = {
-  minPasswordLength: [{ required: true, message: 'Please set minimum password length' }],
-  sessionTimeout: [{ required: true, message: 'Please set session timeout' }]
-}
+// const securityRules = {
+//   minPasswordLength: [{ required: true, message: 'Please set minimum password length' }],
+//   sessionTimeout: [{ required: true, message: 'Please set session timeout' }]
+// }
 
 // Methods
 const loadData = async () => {
@@ -325,8 +326,9 @@ const loadData = async () => {
       enableGeolocation: securitySettings.enable_geolocation,
       enableDeviceFingerprinting: securitySettings.enable_device_fingerprinting,
       notifyFailedLogins: securitySettings.notify_failed_logins,
-              notifyNewDevices: securitySettings.notify_new_devices,
-        notifyPasswordChanges: securitySettings.notify_password_changes
+      notifyNewDevices: securitySettings.notify_new_devices,
+      notifyPasswordChanges: securitySettings.notify_password_changes,
+      allowMultiDeviceLogin: securitySettings.allow_multi_device_login
       })
     } catch (error) {
       console.error('Failed to load security settings:', error)
@@ -496,7 +498,8 @@ const saveSecurityConfig = async () => {
       enable_device_fingerprinting: securityForm.enableDeviceFingerprinting,
       notify_failed_logins: securityForm.notifyFailedLogins,
       notify_new_devices: securityForm.notifyNewDevices,
-      notify_password_changes: securityForm.notifyPasswordChanges
+      notify_password_changes: securityForm.notifyPasswordChanges,
+      allow_multi_device_login: securityForm.allowMultiDeviceLogin
     }
     await systemApi.updateSecuritySettings(settings)
     message.success('Security configuration saved successfully')

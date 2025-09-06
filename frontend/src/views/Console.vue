@@ -128,21 +128,21 @@ const handleMenuClick = ({ key }: { key: string }) => {
 }
 
 // Handle logout
-const handleLogout = () => {
-  Modal.confirm({
-    title: 'Confirm Logout',
-    content: 'Are you sure you want to logout?',
-    onOk: async () => {
-      try {
-        await userStore.logout()
-        message.success('Logged out successfully')
-        router.push('/login')
-      } catch (error) {
-        message.error('Logout failed')
-      }
-    }
-  })
-}
+// const handleLogout = () => {
+//   Modal.confirm({
+//     title: 'Confirm Logout',
+//     content: 'Are you sure you want to logout?',
+//     onOk: async () => {
+//       try {
+//         await userStore.logout()
+//         message.success('Logged out successfully')
+//         router.push('/login')
+//       } catch (error) {
+//         message.error('Logout failed')
+//       }
+//     }
+//   })
+// }
 
 
 </script>

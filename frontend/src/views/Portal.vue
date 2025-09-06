@@ -16,13 +16,13 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
-import { useUserStore } from '@/stores/user'
+// import { useRouter } from 'vue-router'
+// import { message } from 'ant-design-vue'
+// import { useUserStore } from '@/stores/user'
 import AppHeader from '@/components/AppHeader.vue'
 
-const router = useRouter()
-const userStore = useUserStore()
+// const router = useRouter()
+// const userStore = useUserStore()
 </script>
 
 <style scoped>

@@ -38,56 +38,59 @@ export interface UpdatePermissionRequest {
   status?: string
 }
 
-export interface Role {
+
+// 权限路由相关类型定义
+export interface PermissionRoute {
   id: string
   name: string
   code: string
   description?: string
-  type: string
-  is_system: boolean
-  scope: string
+  applications: string[]
+  application_groups: string[]
   status: string
   created_at: string
   updated_at: string
 }
 
-export interface CreateRoleRequest {
+export interface CreatePermissionRouteRequest {
   name: string
   code: string
   description?: string
-  type?: string
-  scope?: string
-}
-
-export interface UpdateRoleRequest {
-  name?: string
-  description?: string
-  type?: string
-  scope?: string
+  applications: string[]
+  application_groups: string[]
   status?: string
 }
 
-export interface RoleAssignment {
+export interface UpdatePermissionRouteRequest {
+  name?: string
+  description?: string
+  applications?: string[]
+  application_groups?: string[]
+  status?: string
+}
+
+export interface PermissionRouteAssignment {
   id: string
-  user_id: string
-  username: string
-  display_name: string
-  email: string
-  role_id: string
-  role_name: string
-  role_code: string
+  permission_route_id: string
+  permission_name: string
+  permission_code: string
+  assignee_type: string
+  assignee_id: string
+  assignee_name: string
   status: string
   assigned_at: string
 }
 
-export interface AssignRoleRequest {
-  user_id: string
-  role_id: string
+export interface AssignPermissionRouteRequest {
+  permission_route_id: string
+  assignee_type: string
+  assignee_id: string
+  status?: string
 }
 
 // 权限管理API
 export const permissionApi = {
-  // 获取权限列表
+  // 获取权限列表（传统权限）
   getPermissions: (params?: {
     page?: number
     page_size?: number
@@ -99,65 +102,62 @@ export const permissionApi = {
     return http.get<PaginatedResponse<Permission>>('/console/permissions', { params })
   },
 
-  // 创建权限
+  // 创建权限（传统权限）
   createPermission: (data: CreatePermissionRequest) => {
     return http.post<Permission>('/console/permissions', data)
   },
 
-  // 更新权限
+  // 更新权限（传统权限）
   updatePermission: (id: string, data: UpdatePermissionRequest) => {
     return http.put<Permission>(`/console/permissions/${id}`, data)
   },
 
-  // 删除权限
+  // 删除权限（传统权限）
   deletePermission: (id: string) => {
     return http.delete(`/console/permissions/${id}`)
   },
 
-  // 获取角色列表
-  getRoles: (params?: {
+  // 获取权限路由列表
+  getPermissionRoutes: (params?: {
     page?: number
     page_size?: number
     search?: string
     status?: string
-    type?: string
   }) => {
-    return http.get<PaginatedResponse<Role>>('/console/roles', { params })
+    return http.get<PaginatedResponse<PermissionRoute>>('/console/permission-routes', { params })
   },
 
-  // 创建角色
-  createRole: (data: CreateRoleRequest) => {
-    return http.post<Role>('/console/roles', data)
+  // 创建权限路由
+  createPermissionRoute: (data: CreatePermissionRouteRequest) => {
+    return http.post<PermissionRoute>('/console/permission-routes', data)
   },
 
-  // 更新角色
-  updateRole: (id: string, data: UpdateRoleRequest) => {
-    return http.put<Role>(`/console/roles/${id}`, data)
+  // 更新权限路由
+  updatePermissionRoute: (id: string, data: UpdatePermissionRouteRequest) => {
+    return http.put<PermissionRoute>(`/console/permission-routes/${id}`, data)
   },
 
-  // 删除角色
-  deleteRole: (id: string) => {
-    return http.delete(`/console/roles/${id}`)
+  // 删除权限路由
+  deletePermissionRoute: (id: string) => {
+    return http.delete(`/console/permission-routes/${id}`)
   },
 
-  // 获取角色分配列表
-  getRoleAssignments: (params?: {
+  // 获取权限路由分配列表
+  getPermissionRouteAssignments: (params?: {
     page?: number
     page_size?: number
-    search?: string
-    role_id?: string
-    user_id?: string
   }) => {
-    return http.get<PaginatedResponse<RoleAssignment>>('/console/role-assignments', { params })
+    return http.get<PaginatedResponse<PermissionRouteAssignment>>('/console/permission-route-assignments', { params })
   },
 
-  // 分配角色给用户
-  assignRole: (data: AssignRoleRequest) => {
-    return http.post('/console/role-assignments', data)
+  // 分配权限路由
+  assignPermissionRoute: (data: AssignPermissionRouteRequest) => {
+    return http.post('/console/permission-route-assignments', data)
   },
 
-  // 移除用户角色
-  removeRole: (userId: string, roleId: string) => {
-    return http.delete(`/console/role-assignments/${userId}/${roleId}`)
-  }
+  // 移除权限路由分配
+  removePermissionRouteAssignment: (assigneeType: string, assigneeId: string, permissionRouteId: string) => {
+    return http.delete(`/console/permission-route-assignments/${assigneeType}/${assigneeId}/${permissionRouteId}`)
+  },
+
 }

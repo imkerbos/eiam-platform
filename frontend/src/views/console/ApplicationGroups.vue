@@ -105,7 +105,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { applicationApi } from '@/api/applications'
 
@@ -297,13 +297,45 @@ const handleModalCancel = () => {
 }
 
 const deleteGroup = async (groupId: string) => {
+  // 显示确认对话框
+  const confirmed = await new Promise((resolve) => {
+    const modal = Modal.confirm({
+      title: 'Delete Application Group',
+      content: 'Are you sure you want to delete this application group? This action cannot be undone.',
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk() {
+        resolve(true)
+      },
+      onCancel() {
+        resolve(false)
+      }
+    })
+  })
+
+  if (!confirmed) {
+    return
+  }
+
   try {
     await applicationApi.deleteApplicationGroup(groupId)
     message.success('Application group deleted successfully')
     loadGroups()
   } catch (error: any) {
     console.error('Failed to delete application group:', error)
-    message.error(error.response?.data?.message || 'Failed to delete application group')
+    const errorMessage = error.response?.data?.message || 'Failed to delete application group'
+    
+    // 如果是有关联应用的错误，显示更详细的提示
+    if (error.response?.status === 400 && error.response?.data?.data?.application_count) {
+      const appCount = error.response.data.data.application_count
+      message.error({
+        content: `Cannot delete this application group because it contains ${appCount} application(s). Please move or delete the applications first.`,
+        duration: 6
+      })
+    } else {
+      message.error(errorMessage)
+    }
   }
 }
 

@@ -122,3 +122,23 @@ type Permission struct {
 func (Permission) TableName() string {
 	return "permissions"
 }
+
+// PermissionRoute 权限路由模型 - 用于定义可访问的应用和应用组
+type PermissionRoute struct {
+	BaseModel
+	Name        string `json:"name" gorm:"type:varchar(100);not null" validate:"required,max=100"`
+	Code        string `json:"code" gorm:"type:varchar(100);uniqueIndex;not null" validate:"required,max=100"`
+	Description string `json:"description" gorm:"type:varchar(500)"`
+	Status      Status `json:"status" gorm:"type:tinyint;default:1;index"`
+
+	// Relationships - 多对多关系
+	Applications      []Application      `json:"applications" gorm:"many2many:permission_route_applications;"`
+	ApplicationGroups []ApplicationGroup `json:"application_groups" gorm:"many2many:permission_route_application_groups;"`
+	Users             []User             `json:"users" gorm:"many2many:permission_route_users;"`
+	Organizations     []Organization     `json:"organizations" gorm:"many2many:permission_route_organizations;"`
+}
+
+// TableName specify table name
+func (PermissionRoute) TableName() string {
+	return "permission_routes"
+}

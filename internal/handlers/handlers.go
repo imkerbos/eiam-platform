@@ -2501,6 +2501,742 @@ func AssignRoleToUserHandler(c *gin.Context) {
 	})
 }
 
+// Permission Route management handlers
+// PermissionRouteInfo 权限路由信息
+type PermissionRouteInfo struct {
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	Code              string   `json:"code"`
+	Description       string   `json:"description"`
+	Applications      []string `json:"applications"`
+	ApplicationGroups []string `json:"application_groups"`
+	Status            string   `json:"status"`
+	CreatedAt         string   `json:"created_at"`
+	UpdatedAt         string   `json:"updated_at"`
+}
+
+// PermissionRouteListResponse 权限路由列表响应
+type PermissionRouteListResponse struct {
+	Items      []PermissionRouteInfo `json:"items"`
+	Total      int64                 `json:"total"`
+	Page       int                   `json:"page"`
+	PageSize   int                   `json:"page_size"`
+	TotalPages int                   `json:"total_pages"`
+}
+
+// CreatePermissionRouteRequest 创建权限路由请求
+type CreatePermissionRouteRequest struct {
+	Name              string   `json:"name" binding:"required"`
+	Code              string   `json:"code" binding:"required"`
+	Description       string   `json:"description"`
+	Applications      []string `json:"applications"`
+	ApplicationGroups []string `json:"application_groups"`
+	Status            string   `json:"status"`
+}
+
+// UpdatePermissionRouteRequest 更新权限路由请求
+type UpdatePermissionRouteRequest struct {
+	Name              string   `json:"name"`
+	Description       string   `json:"description"`
+	Applications      []string `json:"applications"`
+	ApplicationGroups []string `json:"application_groups"`
+	Status            string   `json:"status"`
+}
+
+// PermissionRouteAssignmentInfo 权限路由分配信息
+type PermissionRouteAssignmentInfo struct {
+	ID                string `json:"id"`
+	PermissionRouteID string `json:"permission_route_id"`
+	PermissionName    string `json:"permission_name"`
+	PermissionCode    string `json:"permission_code"`
+	AssigneeType      string `json:"assignee_type"` // user, organization
+	AssigneeID        string `json:"assignee_id"`
+	AssigneeName      string `json:"assignee_name"`
+	Status            string `json:"status"`
+	AssignedAt        string `json:"assigned_at"`
+}
+
+// PermissionRouteAssignmentListResponse 权限路由分配列表响应
+type PermissionRouteAssignmentListResponse struct {
+	Items      []PermissionRouteAssignmentInfo `json:"items"`
+	Total      int64                           `json:"total"`
+	Page       int                             `json:"page"`
+	PageSize   int                             `json:"page_size"`
+	TotalPages int                             `json:"total_pages"`
+}
+
+// AssignPermissionRouteRequest 分配权限路由请求
+type AssignPermissionRouteRequest struct {
+	PermissionRouteID string `json:"permission_route_id" binding:"required"`
+	AssigneeType      string `json:"assignee_type" binding:"required"` // user, organization
+	AssigneeID        string `json:"assignee_id" binding:"required"`
+	Status            string `json:"status"`
+}
+
+func GetPermissionRoutesHandler(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	search := c.Query("search")
+	status := c.Query("status")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	query := database.DB.Model(&models.PermissionRoute{})
+
+	// 搜索过滤
+	if search != "" {
+		query = query.Where("name LIKE ? OR code LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%")
+	}
+
+	// 状态过滤
+	if status != "" {
+		statusInt, err := strconv.Atoi(status)
+		if err == nil {
+			query = query.Where("status = ?", statusInt)
+		}
+	}
+
+	// 获取总数
+	var total int64
+	query.Count(&total)
+
+	// 计算总页数
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	// 分页查询
+	offset := (page - 1) * pageSize
+	var permissionRoutes []models.PermissionRoute
+	err := query.Preload("Applications").Preload("ApplicationGroups").Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&permissionRoutes).Error
+	if err != nil {
+		logger.ErrorError("Failed to get permission routes", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 转换为响应格式
+	items := make([]PermissionRouteInfo, len(permissionRoutes))
+	for i, route := range permissionRoutes {
+		applications := make([]string, len(route.Applications))
+		for j, app := range route.Applications {
+			applications[j] = app.Name
+		}
+
+		groups := make([]string, len(route.ApplicationGroups))
+		for j, group := range route.ApplicationGroups {
+			groups[j] = group.Name
+		}
+
+		items[i] = PermissionRouteInfo{
+			ID:                route.ID,
+			Name:              route.Name,
+			Code:              route.Code,
+			Description:       route.Description,
+			Applications:      applications,
+			ApplicationGroups: groups,
+			Status:            route.Status.String(),
+			CreatedAt:         route.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:         route.UpdatedAt.Format("2006-01-02 15:04:05"),
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data": PermissionRouteListResponse{
+			Items:      items,
+			Total:      total,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+		},
+	})
+}
+
+func CreatePermissionRouteHandler(c *gin.Context) {
+	var req CreatePermissionRouteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查权限路由代码是否已存在
+	var existingRoute models.PermissionRoute
+	if err := database.DB.Where("code = ?", req.Code).First(&existingRoute).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Permission route code already exists",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 创建权限路由
+	route := models.PermissionRoute{
+		Name:        req.Name,
+		Code:        req.Code,
+		Description: req.Description,
+		Status:      models.StatusActive,
+	}
+
+	if req.Status != "" {
+		if req.Status == "inactive" {
+			route.Status = models.StatusInactive
+		}
+	}
+
+	// 开始事务
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Create(&route).Error; err != nil {
+		tx.Rollback()
+		logger.ErrorError("Failed to create permission route", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 关联应用
+	if len(req.Applications) > 0 {
+		var applications []models.Application
+		if err := tx.Where("id IN ?", req.Applications).Find(&applications).Error; err == nil {
+			tx.Model(&route).Association("Applications").Append(applications)
+		}
+	}
+
+	// 关联应用组
+	if len(req.ApplicationGroups) > 0 {
+		var groups []models.ApplicationGroup
+		if err := tx.Where("id IN ?", req.ApplicationGroups).Find(&groups).Error; err == nil {
+			tx.Model(&route).Association("ApplicationGroups").Append(groups)
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		logger.ErrorError("Failed to commit permission route creation", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission route created successfully",
+		"data":    route,
+	})
+}
+
+func UpdatePermissionRouteHandler(c *gin.Context) {
+	routeID := c.Param("id")
+	if routeID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Permission route ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	var req UpdatePermissionRouteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 查找权限路由
+	var route models.PermissionRoute
+	if err := database.DB.Where("id = ?", routeID).First(&route).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Permission route not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 开始事务
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 更新基本信息
+	updates := make(map[string]interface{})
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.Description != "" {
+		updates["description"] = req.Description
+	}
+	if req.Status != "" {
+		statusInt := models.StatusActive
+		if req.Status == "inactive" {
+			statusInt = models.StatusInactive
+		}
+		updates["status"] = statusInt
+	}
+	updates["updated_at"] = time.Now()
+
+	if err := tx.Model(&route).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		logger.ErrorError("Failed to update permission route", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 更新应用关联
+	if req.Applications != nil {
+		tx.Model(&route).Association("Applications").Clear()
+		if len(req.Applications) > 0 {
+			var applications []models.Application
+			if err := tx.Where("id IN ?", req.Applications).Find(&applications).Error; err == nil {
+				tx.Model(&route).Association("Applications").Append(applications)
+			}
+		}
+	}
+
+	// 更新应用组关联
+	if req.ApplicationGroups != nil {
+		tx.Model(&route).Association("ApplicationGroups").Clear()
+		if len(req.ApplicationGroups) > 0 {
+			var groups []models.ApplicationGroup
+			if err := tx.Where("id IN ?", req.ApplicationGroups).Find(&groups).Error; err == nil {
+				tx.Model(&route).Association("ApplicationGroups").Append(groups)
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		logger.ErrorError("Failed to commit permission route update", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission route updated successfully",
+		"data":    route,
+	})
+}
+
+func DeletePermissionRouteHandler(c *gin.Context) {
+	routeID := c.Param("id")
+	if routeID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Permission route ID is required",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 查找权限路由
+	var route models.PermissionRoute
+	if err := database.DB.Where("id = ?", routeID).First(&route).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Permission route not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 软删除权限路由
+	if err := database.DB.Delete(&route).Error; err != nil {
+		logger.ErrorError("Failed to delete permission route", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission route deleted successfully",
+		"data":    nil,
+	})
+}
+
+func GetPermissionRouteAssignmentsHandler(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	// 查询用户分配
+	var userAssignments []struct {
+		PermissionRouteID string `json:"permission_route_id"`
+		PermissionName    string `json:"permission_name"`
+		PermissionCode    string `json:"permission_code"`
+		UserID            string `json:"user_id"`
+		Username          string `json:"username"`
+		DisplayName       string `json:"display_name"`
+		AssignedAt        string `json:"assigned_at"`
+	}
+
+	userQuery := `
+		SELECT 
+			pru.permission_route_id,
+			pr.name as permission_name,
+			pr.code as permission_code,
+			pru.user_id,
+			u.username,
+			u.display_name,
+			pru.created_at as assigned_at
+		FROM permission_route_users pru
+		JOIN permission_routes pr ON pru.permission_route_id = pr.id
+		JOIN users u ON pru.user_id = u.id
+		WHERE pr.deleted_at IS NULL AND u.deleted_at IS NULL
+		ORDER BY pru.created_at DESC
+	`
+
+	if err := database.DB.Raw(userQuery).Scan(&userAssignments).Error; err != nil {
+		logger.ErrorError("Failed to get user permission route assignments", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 查询组织分配
+	var orgAssignments []struct {
+		PermissionRouteID string `json:"permission_route_id"`
+		PermissionName    string `json:"permission_name"`
+		PermissionCode    string `json:"permission_code"`
+		OrganizationID    string `json:"organization_id"`
+		OrganizationName  string `json:"organization_name"`
+		AssignedAt        string `json:"assigned_at"`
+	}
+
+	orgQuery := `
+		SELECT 
+			pro.permission_route_id,
+			pr.name as permission_name,
+			pr.code as permission_code,
+			pro.organization_id,
+			o.name as organization_name,
+			pro.created_at as assigned_at
+		FROM permission_route_organizations pro
+		JOIN permission_routes pr ON pro.permission_route_id = pr.id
+		JOIN organizations o ON pro.organization_id = o.id
+		WHERE pr.deleted_at IS NULL AND o.deleted_at IS NULL
+		ORDER BY pro.created_at DESC
+	`
+
+	if err := database.DB.Raw(orgQuery).Scan(&orgAssignments).Error; err != nil {
+		logger.ErrorError("Failed to get organization permission route assignments", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 合并结果
+	allAssignments := make([]PermissionRouteAssignmentInfo, 0, len(userAssignments)+len(orgAssignments))
+
+	// 添加用户分配
+	for _, assignment := range userAssignments {
+		allAssignments = append(allAssignments, PermissionRouteAssignmentInfo{
+			ID:                assignment.UserID + "_" + assignment.PermissionRouteID,
+			PermissionRouteID: assignment.PermissionRouteID,
+			PermissionName:    assignment.PermissionName,
+			PermissionCode:    assignment.PermissionCode,
+			AssigneeType:      "user",
+			AssigneeID:        assignment.UserID,
+			AssigneeName:      assignment.DisplayName,
+			Status:            "active",
+			AssignedAt:        assignment.AssignedAt,
+		})
+	}
+
+	// 添加组织分配
+	for _, assignment := range orgAssignments {
+		allAssignments = append(allAssignments, PermissionRouteAssignmentInfo{
+			ID:                assignment.OrganizationID + "_" + assignment.PermissionRouteID,
+			PermissionRouteID: assignment.PermissionRouteID,
+			PermissionName:    assignment.PermissionName,
+			PermissionCode:    assignment.PermissionCode,
+			AssigneeType:      "organization",
+			AssigneeID:        assignment.OrganizationID,
+			AssigneeName:      assignment.OrganizationName,
+			Status:            "active",
+			AssignedAt:        assignment.AssignedAt,
+		})
+	}
+
+	// 分页处理
+	total := int64(len(allAssignments))
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	offset := (page - 1) * pageSize
+	end := offset + pageSize
+	if end > len(allAssignments) {
+		end = len(allAssignments)
+	}
+
+	var items []PermissionRouteAssignmentInfo
+	if offset < len(allAssignments) {
+		items = allAssignments[offset:end]
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data": PermissionRouteAssignmentListResponse{
+			Items:      items,
+			Total:      total,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+		},
+	})
+}
+
+func AssignPermissionRouteHandler(c *gin.Context) {
+	var req AssignPermissionRouteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": i18n.InvalidRequestData,
+			"data":    nil,
+		})
+		return
+	}
+
+	// 检查权限路由是否存在
+	var route models.PermissionRoute
+	if err := database.DB.Where("id = ?", req.PermissionRouteID).First(&route).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "Permission route not found",
+			"data":    nil,
+		})
+		return
+	}
+
+	// 开始事务
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if req.AssigneeType == "user" {
+		// 检查用户是否存在
+		var user models.User
+		if err := tx.Where("id = ?", req.AssigneeID).First(&user).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "User not found",
+				"data":    nil,
+			})
+			return
+		}
+
+		// 检查是否已经分配
+		var existingAssignment int64
+		tx.Table("permission_route_users").Where("permission_route_id = ? AND user_id = ?", req.PermissionRouteID, req.AssigneeID).Count(&existingAssignment)
+		if existingAssignment > 0 {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "User already has this permission route",
+				"data":    nil,
+			})
+			return
+		}
+
+		// 分配权限路由给用户
+		assignment := struct {
+			PermissionRouteID string `gorm:"column:permission_route_id"`
+			UserID            string `gorm:"column:user_id"`
+		}{
+			PermissionRouteID: req.PermissionRouteID,
+			UserID:            req.AssigneeID,
+		}
+
+		if err := tx.Table("permission_route_users").Create(&assignment).Error; err != nil {
+			tx.Rollback()
+			logger.ErrorError("Failed to assign permission route to user", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": i18n.InternalServerError,
+				"data":    nil,
+			})
+			return
+		}
+
+	} else if req.AssigneeType == "organization" {
+		// 检查组织是否存在
+		var org models.Organization
+		if err := tx.Where("id = ?", req.AssigneeID).First(&org).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "Organization not found",
+				"data":    nil,
+			})
+			return
+		}
+
+		// 检查是否已经分配
+		var existingAssignment int64
+		tx.Table("permission_route_organizations").Where("permission_route_id = ? AND organization_id = ?", req.PermissionRouteID, req.AssigneeID).Count(&existingAssignment)
+		if existingAssignment > 0 {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Organization already has this permission route",
+				"data":    nil,
+			})
+			return
+		}
+
+		// 分配权限路由给组织
+		assignment := struct {
+			PermissionRouteID string `gorm:"column:permission_route_id"`
+			OrganizationID    string `gorm:"column:organization_id"`
+		}{
+			PermissionRouteID: req.PermissionRouteID,
+			OrganizationID:    req.AssigneeID,
+		}
+
+		if err := tx.Table("permission_route_organizations").Create(&assignment).Error; err != nil {
+			tx.Rollback()
+			logger.ErrorError("Failed to assign permission route to organization", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": i18n.InternalServerError,
+				"data":    nil,
+			})
+			return
+		}
+	} else {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid assignee type",
+			"data":    nil,
+		})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		logger.ErrorError("Failed to commit permission route assignment", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": i18n.InternalServerError,
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission route assigned successfully",
+		"data":    nil,
+	})
+}
+
+func RemovePermissionRouteAssignmentHandler(c *gin.Context) {
+	assigneeType := c.Param("assigneeType")
+	assigneeID := c.Param("assigneeId")
+	permissionRouteID := c.Param("permissionRouteId")
+
+	if assigneeType == "" || assigneeID == "" || permissionRouteID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Assignee type, assignee ID and permission route ID are required",
+			"data":    nil,
+		})
+		return
+	}
+
+	if assigneeType == "user" {
+		if err := database.DB.Table("permission_route_users").Where("permission_route_id = ? AND user_id = ?", permissionRouteID, assigneeID).Delete(&struct{}{}).Error; err != nil {
+			logger.ErrorError("Failed to remove permission route from user", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": i18n.InternalServerError,
+				"data":    nil,
+			})
+			return
+		}
+	} else if assigneeType == "organization" {
+		if err := database.DB.Table("permission_route_organizations").Where("permission_route_id = ? AND organization_id = ?", permissionRouteID, assigneeID).Delete(&struct{}{}).Error; err != nil {
+			logger.ErrorError("Failed to remove permission route from organization", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": i18n.InternalServerError,
+				"data":    nil,
+			})
+			return
+		}
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid assignee type",
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Permission route assignment removed successfully",
+		"data":    nil,
+	})
+}
+
 func RemoveRoleFromUserHandler(c *gin.Context) {
 	userID := c.Param("userID")
 	roleID := c.Param("roleID")
@@ -2748,10 +3484,11 @@ func UpdateApplicationHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.ErrorError("Failed to bind JSON for application update", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "Invalid request data",
-			"data":    nil,
+			"data":    gin.H{"error": err.Error()},
 		})
 		return
 	}
@@ -3113,6 +3850,20 @@ func DeleteApplicationGroupHandler(c *gin.Context) {
 			"code":    404,
 			"message": "Application group not found",
 			"data":    nil,
+		})
+		return
+	}
+
+	// 检查是否有应用属于该分组
+	var appCount int64
+	database.DB.Model(&models.Application{}).Where("group_id = ?", groupID).Count(&appCount)
+	if appCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Cannot delete application group that contains applications. Please move or delete the applications first.",
+			"data": gin.H{
+				"application_count": appCount,
+			},
 		})
 		return
 	}

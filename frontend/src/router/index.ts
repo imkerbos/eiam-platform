@@ -68,12 +68,6 @@ const routes: RouteRecordRaw[] = [
               meta: { title: 'Security Settings', requiresAdmin: true }
             },
       {
-        path: 'roles',
-        name: 'Roles',
-        component: () => import('@/views/console/Roles.vue'),
-        meta: { title: 'Role Management', requiresAdmin: true }
-      },
-      {
         path: 'applications',
         name: 'Applications',
         component: () => import('@/views/console/Applications.vue'),

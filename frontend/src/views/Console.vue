@@ -37,8 +37,7 @@
               <SafetyOutlined />
               <span>Access Control</span>
             </template>
-            <a-menu-item key="roles">Roles</a-menu-item>
-            <a-menu-item key="permissions">Permissions</a-menu-item>
+            <a-menu-item key="permissions">Permission Routes & Assignments</a-menu-item>
           </a-sub-menu>
           
           <a-sub-menu key="applications">

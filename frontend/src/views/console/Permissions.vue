@@ -2,69 +2,17 @@
   <div class="permissions-page">
     <div class="page-header">
       <h2>Permissions Management</h2>
-      <p>Manage system permissions and access controls</p>
+      <p>Manage permission routes and access assignments for applications</p>
     </div>
 
     <!-- Permission Categories -->
     <a-tabs v-model:activeKey="activeTab" type="card" @change="handleTabChange">
-      <a-tab-pane key="roles" tab="Roles">
-        <div class="tab-content">
-          <div class="actions-bar">
-            <a-button type="primary" @click="showRoleModal">
-              <PlusOutlined />
-              Add Role
-            </a-button>
-          </div>
-          
-          <a-table
-            :columns="roleColumns"
-            :data-source="roles"
-            :loading="loading"
-            :pagination="pagination"
-            @change="handleTableChange"
-            row-key="id"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'status'">
-                <a-tag :color="record.status === 'active' ? 'green' : 'red'">
-                  {{ record.status }}
-                </a-tag>
-              </template>
-              <template v-else-if="column.key === 'permissions'">
-                <a-tag v-for="perm in record.permissions.slice(0, 3)" :key="perm" style="margin: 2px">
-                  {{ perm }}
-                </a-tag>
-                <a-tag v-if="record.permissions.length > 3" color="blue">
-                  +{{ record.permissions.length - 3 }} more
-                </a-tag>
-              </template>
-              <template v-else-if="column.key === 'actions'">
-                <a-space>
-                  <a-button type="link" size="small" @click="editRole(record)">
-                    Edit
-                  </a-button>
-                  <a-button type="link" size="small" @click="viewRolePermissions(record)">
-                    Permissions
-                  </a-button>
-                  <a-popconfirm
-                    title="Are you sure you want to delete this role?"
-                    @confirm="deleteRole(record.id)"
-                  >
-                    <a-button type="link" size="small" danger>Delete</a-button>
-                  </a-popconfirm>
-                </a-space>
-              </template>
-            </template>
-          </a-table>
-        </div>
-      </a-tab-pane>
-
-      <a-tab-pane key="permissions" tab="Permissions">
+      <a-tab-pane key="permissions" tab="Permission Routes">
         <div class="tab-content">
           <div class="actions-bar">
             <a-button type="primary" @click="showPermissionModal">
               <PlusOutlined />
-              Add Permission
+              Create Permission Route
             </a-button>
           </div>
           
@@ -77,7 +25,19 @@
             row-key="id"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'status'">
+              <template v-if="column.key === 'applications'">
+                <a-tag v-for="app in record.applications" :key="app" color="blue">
+                  {{ app }}
+                </a-tag>
+                <span v-if="!record.applications || record.applications.length === 0">-</span>
+              </template>
+              <template v-else-if="column.key === 'groups'">
+                <a-tag v-for="group in record.application_groups" :key="group" color="green">
+                  {{ group }}
+                </a-tag>
+                <span v-if="!record.application_groups || record.application_groups.length === 0">-</span>
+              </template>
+              <template v-else-if="column.key === 'status'">
                 <a-tag :color="record.status === 'active' ? 'green' : 'red'">
                   {{ record.status }}
                 </a-tag>
@@ -88,7 +48,7 @@
                     Edit
                   </a-button>
                   <a-popconfirm
-                    title="Are you sure you want to delete this permission?"
+                    title="Are you sure you want to delete this permission route?"
                     @confirm="deletePermission(record.id)"
                   >
                     <a-button type="link" size="small" danger>Delete</a-button>
@@ -100,12 +60,12 @@
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="assignments" tab="Role Assignments">
+      <a-tab-pane key="assignments" tab="Permission Assignments">
         <div class="tab-content">
           <div class="actions-bar">
             <a-button type="primary" @click="showAssignmentModal">
               <PlusOutlined />
-              Assign Role
+              Assign Permission
             </a-button>
           </div>
           
@@ -118,16 +78,18 @@
             row-key="id"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'status'">
+              <template v-if="column.key === 'assignee_type'">
+                <a-tag :color="record.assignee_type === 'user' ? 'blue' : 'green'">
+                  {{ record.assignee_type === 'user' ? 'User' : 'Organization' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'status'">
                 <a-tag :color="record.status === 'active' ? 'green' : 'red'">
                   {{ record.status }}
                 </a-tag>
               </template>
               <template v-else-if="column.key === 'actions'">
                 <a-space>
-                  <a-button type="link" size="small" @click="editAssignment(record)">
-                    Edit
-                  </a-button>
                   <a-popconfirm
                     title="Are you sure you want to remove this assignment?"
                     @confirm="removeAssignment(record)"
@@ -142,49 +104,11 @@
       </a-tab-pane>
     </a-tabs>
 
-    <!-- Role Modal -->
-    <a-modal
-      v-model:open="roleModalVisible"
-      :title="editingRole ? 'Edit Role' : 'Add Role'"
-      @ok="handleRoleSubmit"
-      @cancel="handleRoleCancel"
-    >
-      <a-form
-        ref="roleFormRef"
-        :model="roleForm"
-        :rules="roleRules"
-        layout="vertical"
-      >
-        <a-form-item label="Role Name" name="name">
-          <a-input v-model:value="roleForm.name" placeholder="Enter role name" />
-        </a-form-item>
-        <a-form-item label="Role Code" name="code">
-          <a-input v-model:value="roleForm.code" placeholder="Enter role code" />
-        </a-form-item>
-        <a-form-item label="Description" name="description">
-          <a-textarea v-model:value="roleForm.description" placeholder="Enter role description" />
-        </a-form-item>
-        <a-form-item label="Type" name="type">
-          <a-select v-model:value="roleForm.type">
-            <a-select-option value="system">System</a-select-option>
-            <a-select-option value="custom">Custom</a-select-option>
-            <a-select-option value="application">Application</a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="Scope" name="scope">
-          <a-select v-model:value="roleForm.scope">
-            <a-select-option value="global">Global</a-select-option>
-            <a-select-option value="organization">Organization</a-select-option>
-            <a-select-option value="application">Application</a-select-option>
-          </a-select>
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
     <!-- Permission Modal -->
     <a-modal
       v-model:open="permissionModalVisible"
-      :title="editingPermission ? 'Edit Permission' : 'Add Permission'"
+      :title="editingPermission ? 'Edit Permission Route' : 'Create Permission Route'"
+      width="800px"
       @ok="handlePermissionSubmit"
       @cancel="handlePermissionCancel"
     >
@@ -194,37 +118,76 @@
         :rules="permissionRules"
         layout="vertical"
       >
-        <a-form-item label="Permission Name" name="name">
-          <a-input v-model:value="permissionForm.name" placeholder="Enter permission name" />
-        </a-form-item>
-        <a-form-item label="Permission Code" name="code">
-          <a-input v-model:value="permissionForm.code" placeholder="Enter permission code" />
-        </a-form-item>
-        <a-form-item label="Resource" name="resource">
-          <a-input v-model:value="permissionForm.resource" placeholder="Enter resource (e.g., users, organizations)" />
-        </a-form-item>
-        <a-form-item label="Action" name="action">
-          <a-select v-model:value="permissionForm.action">
-            <a-select-option value="create">Create</a-select-option>
-            <a-select-option value="read">Read</a-select-option>
-            <a-select-option value="update">Update</a-select-option>
-            <a-select-option value="delete">Delete</a-select-option>
-            <a-select-option value="manage">Manage</a-select-option>
-            <a-select-option value="execute">Execute</a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="Category" name="category">
-          <a-select v-model:value="permissionForm.category">
-            <a-select-option value="system">System</a-select-option>
-            <a-select-option value="application">Application</a-select-option>
-            <a-select-option value="data">Data</a-select-option>
-          </a-select>
-        </a-form-item>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="Route Name" name="name">
+              <a-input 
+                v-model:value="permissionForm.name" 
+                placeholder="e.g., Finance Access, HR Management, Sales Report"
+                :maxlength="100"
+                @input="handleNameInput"
+              />
+              <div class="form-help-text">
+                Display name for the permission route. Route Code will be auto-generated.
+              </div>
+            </a-form-item>
+          </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="Route Code" name="code">
+                      <a-input 
+                        v-model:value="permissionForm.code" 
+                        placeholder="e.g., FINANCE_ACCESS, HR_MANAGEMENT, SALES_REPORT"
+                        :maxlength="50"
+                        @input="handleCodeInput"
+                      />
+                      <div class="form-help-text">
+                        Auto-generated from Route Name. Format: UPPERCASE_WITH_UNDERSCORES
+                      </div>
+                    </a-form-item>
+                  </a-col>
+        </a-row>
+        
         <a-form-item label="Description" name="description">
-          <a-textarea v-model:value="permissionForm.description" placeholder="Enter permission description" />
+          <a-textarea 
+            v-model:value="permissionForm.description" 
+            :rows="3" 
+            placeholder="Describe what this permission route allows access to"
+            :maxlength="500"
+          />
+          <div class="form-help-text">
+            Describe what this permission route allows access to, e.g., access to finance system, view sales reports
+          </div>
         </a-form-item>
-        <a-form-item label="Is System Permission" name="is_system">
-          <a-switch v-model:checked="permissionForm.is_system" />
+        
+        <a-form-item label="Accessible Applications" name="applications">
+          <a-select 
+            v-model:value="permissionForm.applications" 
+            mode="multiple" 
+            placeholder="Select applications this route can access"
+            :options="applicationOptions"
+          />
+          <div class="form-help-text">
+            Select specific applications that this permission route can access
+          </div>
+        </a-form-item>
+        
+        <a-form-item label="Accessible Application Groups" name="groups">
+          <a-select 
+            v-model:value="permissionForm.groups" 
+            mode="multiple" 
+            placeholder="Select application groups this route can access"
+            :options="groupOptions"
+          />
+          <div class="form-help-text">
+            Select application groups (containing multiple applications) that this permission route can access
+          </div>
+        </a-form-item>
+        
+        <a-form-item label="Status" name="status">
+          <a-select v-model:value="permissionForm.status">
+            <a-select-option value="active">Active</a-select-option>
+            <a-select-option value="inactive">Inactive</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -232,7 +195,8 @@
     <!-- Assignment Modal -->
     <a-modal
       v-model:open="assignmentModalVisible"
-      :title="editingAssignment ? 'Edit Assignment' : 'Assign Role'"
+      :title="editingAssignment ? 'Edit Permission Assignment' : 'Assign Permission'"
+      width="600px"
       @ok="handleAssignmentSubmit"
       @cancel="handleAssignmentCancel"
     >
@@ -242,28 +206,41 @@
         :rules="assignmentRules"
         layout="vertical"
       >
-        <a-form-item label="User" name="user_id">
-          <a-select
-            v-model:value="assignmentForm.user_id"
-            placeholder="Select user"
-            show-search
-            :filter-option="filterUserOption"
-          >
+        <a-form-item label="Assignee Type" name="assigneeType">
+          <a-radio-group v-model:value="assignmentForm.assigneeType" @change="handleAssigneeTypeChange">
+            <a-radio value="user">Individual User</a-radio>
+            <a-radio value="organization">Organization/Department</a-radio>
+          </a-radio-group>
+        </a-form-item>
+        
+        <a-form-item v-if="assignmentForm.assigneeType === 'user'" label="User" name="userId" :rules="assignmentRules.userId">
+          <a-select v-model:value="assignmentForm.userId" placeholder="Select user">
             <a-select-option v-for="user in users" :key="user.id" :value="user.id">
-              {{ user.display_name }} ({{ user.username }})
+              {{ user.display_name || user.username }} ({{ user.email }})
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="Role" name="role_id">
-          <a-select
-            v-model:value="assignmentForm.role_id"
-            placeholder="Select role"
-            show-search
-            :filter-option="filterRoleOption"
-          >
-            <a-select-option v-for="role in roles" :key="role.id" :value="role.id">
-              {{ role.name }} ({{ role.code }})
+        
+        <a-form-item v-if="assignmentForm.assigneeType === 'organization'" label="Organization/Department" name="organizationId" :rules="assignmentRules.organizationId">
+          <a-select v-model:value="assignmentForm.organizationId" placeholder="Select organization">
+            <a-select-option v-for="org in organizations" :key="org.id" :value="org.id">
+              {{ org.name }} ({{ org.code }})
             </a-select-option>
+          </a-select>
+        </a-form-item>
+        
+        <a-form-item label="Permission Route" name="permissionId">
+          <a-select v-model:value="assignmentForm.permissionId" placeholder="Select permission route">
+            <a-select-option v-for="permission in permissions" :key="permission.id" :value="permission.id">
+              {{ permission.name }} ({{ permission.code }})
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        
+        <a-form-item label="Status" name="status">
+          <a-select v-model:value="assignmentForm.status">
+            <a-select-option value="active">Active</a-select-option>
+            <a-select-option value="inactive">Inactive</a-select-option>
           </a-select>
         </a-form-item>
       </a-form>
@@ -272,186 +249,262 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
-import { permissionApi, type Permission, type Role, type RoleAssignment, type CreatePermissionRequest, type CreateRoleRequest, type AssignRoleRequest } from '@/api/permissions'
+import { permissionApi } from '@/api/permissions'
 import { userApi } from '@/api/users'
-import type { User } from '@/types/api'
+import { organizationApi } from '@/api/organizations'
+import { applicationApi } from '@/api/applications'
 
 // Data
-const activeTab = ref('roles')
 const loading = ref(false)
-const roleModalVisible = ref(false)
+const activeTab = ref('permissions')
+const permissions = ref<any[]>([])
+const assignments = ref<any[]>([])
+const users = ref<any[]>([])
+const organizations = ref<any[]>([])
+const applications = ref<any[]>([])
+const applicationGroups = ref<any[]>([])
 const permissionModalVisible = ref(false)
 const assignmentModalVisible = ref(false)
-const editingRole = ref(false)
-const editingPermission = ref(false)
-const editingAssignment = ref(false)
+const editingPermission = ref<any>(null)
+const editingAssignment = ref<any>(null)
+const permissionFormRef = ref()
+const assignmentFormRef = ref()
 
-// Real data
-const roles = ref<Role[]>([])
-const permissions = ref<Permission[]>([])
-const assignments = ref<RoleAssignment[]>([])
-const users = ref<User[]>([])
+const permissionForm = reactive({
+  name: '',
+  code: '',
+  description: '',
+  applications: [],
+  groups: [],
+  status: 'active'
+})
 
-// Table columns
-const roleColumns = [
-  { title: 'Role Name', dataIndex: 'name', key: 'name' },
-  { title: 'Code', dataIndex: 'code', key: 'code' },
-  { title: 'Description', dataIndex: 'description', key: 'description' },
-  { title: 'Type', dataIndex: 'type', key: 'type' },
-  { title: 'Scope', dataIndex: 'scope', key: 'scope' },
-  { title: 'Status', dataIndex: 'status', key: 'status' },
-  { title: 'Created', dataIndex: 'created_at', key: 'created_at' },
-  { title: 'Actions', key: 'actions' }
-]
+const assignmentForm = reactive({
+  assigneeType: 'user',
+  userId: '',
+  organizationId: '',
+  permissionId: '',
+  status: 'active'
+})
 
-const permissionColumns = [
-  { title: 'Permission Name', dataIndex: 'name', key: 'name' },
-  { title: 'Code', dataIndex: 'code', key: 'code' },
-  { title: 'Resource', dataIndex: 'resource', key: 'resource' },
-  { title: 'Action', dataIndex: 'action', key: 'action' },
-  { title: 'Category', dataIndex: 'category', key: 'category' },
-  { title: 'Description', dataIndex: 'description', key: 'description' },
-  { title: 'Status', dataIndex: 'status', key: 'status' },
-  { title: 'Created', dataIndex: 'created_at', key: 'created_at' },
-  { title: 'Actions', key: 'actions' }
-]
+const permissionRules = {
+  name: [{ required: true, message: 'Please input permission route name!' }],
+  code: [
+    { required: true, message: 'Please input permission route code!' },
+    { 
+      pattern: /^[A-Z][A-Z0-9_]*$/, 
+      message: 'Route code must start with uppercase letter and contain only uppercase letters, numbers, and underscores!' 
+    },
+    { min: 3, max: 50, message: 'Route code must be between 3 and 50 characters!' }
+  ],
+  status: [{ required: true, message: 'Please select status!' }]
+}
 
-const assignmentColumns = [
-  { title: 'User', dataIndex: 'display_name', key: 'display_name' },
-  { title: 'Username', dataIndex: 'username', key: 'username' },
-  { title: 'Email', dataIndex: 'email', key: 'email' },
-  { title: 'Role', dataIndex: 'role_name', key: 'role_name' },
-  { title: 'Role Code', dataIndex: 'role_code', key: 'role_code' },
-  { title: 'Status', dataIndex: 'status', key: 'status' },
-  { title: 'Assigned', dataIndex: 'assigned_at', key: 'assigned_at' },
-  { title: 'Actions', key: 'actions' }
-]
+const assignmentRules = computed(() => ({
+  assigneeType: [{ required: true, message: 'Please select assignee type!' }],
+  userId: assignmentForm.assigneeType === 'user' ? [{ required: true, message: 'Please select user!' }] : [],
+  organizationId: assignmentForm.assigneeType === 'organization' ? [{ required: true, message: 'Please select organization!' }] : [],
+  permissionId: [{ required: true, message: 'Please select permission route!' }],
+  status: [{ required: true, message: 'Please select status!' }]
+}))
 
-// Pagination
 const pagination = reactive({
   current: 1,
   pageSize: 10,
   total: 0,
-  showSizeChanger: true,
-  showQuickJumper: true
+  total_pages: 0
 })
 
-// Forms
-const roleForm = reactive<CreateRoleRequest & { status?: string }>({
-  name: '',
-  code: '',
-  description: '',
-  type: 'custom',
-  scope: 'global',
-  status: 'active'
+const permissionColumns = [
+  {
+    title: 'Route Name',
+    dataIndex: 'name',
+    key: 'name'
+  },
+  {
+    title: 'Route Code',
+    dataIndex: 'code',
+    key: 'code'
+  },
+  {
+    title: 'Accessible Applications',
+    dataIndex: 'applications',
+    key: 'applications'
+  },
+  {
+    title: 'Accessible Groups',
+    dataIndex: 'groups',
+    key: 'groups'
+  },
+  {
+    title: 'Description',
+    dataIndex: 'description',
+    key: 'description'
+  },
+  {
+    title: 'Status',
+    dataIndex: 'status',
+    key: 'status'
+  },
+  {
+    title: 'Actions',
+    key: 'actions'
+  }
+]
+
+const assignmentColumns = [
+  {
+    title: 'Assignee Type',
+    dataIndex: 'assignee_type',
+    key: 'assignee_type'
+  },
+  {
+    title: 'Assignee Name',
+    dataIndex: 'assignee_name',
+    key: 'assignee_name'
+  },
+  {
+    title: 'Permission Route',
+    dataIndex: 'permission_name',
+    key: 'permission_name'
+  },
+  {
+    title: 'Route Code',
+    dataIndex: 'permission_code',
+    key: 'permission_code'
+  },
+  {
+    title: 'Assigned At',
+    dataIndex: 'assigned_at',
+    key: 'assigned_at'
+  },
+  {
+    title: 'Status',
+    dataIndex: 'status',
+    key: 'status'
+  },
+  {
+    title: 'Actions',
+    key: 'actions'
+  }
+]
+
+// Computed properties for options
+const applicationOptions = computed(() => {
+  return applications.value.map(app => ({
+    label: app.name,
+    value: app.id
+  }))
 })
 
-const permissionForm = reactive<CreatePermissionRequest & { status?: string }>({
-  name: '',
-  code: '',
-  resource: '',
-  action: 'read',
-  description: '',
-  category: 'system',
-  is_system: false,
-  status: 'active'
+const groupOptions = computed(() => {
+  return applicationGroups.value.map(group => ({
+    label: group.name,
+    value: group.id
+  }))
 })
-
-const assignmentForm = reactive<AssignRoleRequest & { status?: string }>({
-  user_id: '',
-  role_id: '',
-  status: 'active'
-})
-
-// Form rules
-const roleRules = {
-  name: [{ required: true, message: 'Please enter role name' }],
-  code: [{ required: true, message: 'Please enter role code' }],
-  description: [{ required: true, message: 'Please enter role description' }],
-  type: [{ required: true, message: 'Please select role type' }],
-  scope: [{ required: true, message: 'Please select role scope' }]
-}
-
-const permissionRules = {
-  name: [{ required: true, message: 'Please enter permission name' }],
-  code: [{ required: true, message: 'Please enter permission code' }],
-  resource: [{ required: true, message: 'Please enter resource' }],
-  action: [{ required: true, message: 'Please select action' }],
-  category: [{ required: true, message: 'Please select category' }]
-}
-
-const assignmentRules = {
-  user_id: [{ required: true, message: 'Please select user' }],
-  role_id: [{ required: true, message: 'Please select role' }]
-}
 
 // Methods
 const loadData = async () => {
   loading.value = true
   try {
-    if (activeTab.value === 'roles') {
-      await loadRoles()
-    } else if (activeTab.value === 'permissions') {
+    if (activeTab.value === 'permissions') {
       await loadPermissions()
     } else if (activeTab.value === 'assignments') {
       await loadAssignments()
     }
-  } catch (error) {
-    message.error('Failed to load data')
+  } catch (error: any) {
+    console.error('Failed to load data:', error)
+    message.error(error.response?.data?.message || 'Failed to load data')
   } finally {
     loading.value = false
   }
 }
 
-const loadRoles = async () => {
-  try {
-    const response = await permissionApi.getRoles({
-      page: pagination.current,
-      page_size: pagination.pageSize
-    })
-    roles.value = response.items
-    pagination.total = response.total
-  } catch (error) {
-    message.error('Failed to load roles')
-  }
-}
-
 const loadPermissions = async () => {
   try {
-    const response = await permissionApi.getPermissions({
+    const response = await permissionApi.getPermissionRoutes({
       page: pagination.current,
       page_size: pagination.pageSize
     })
-    permissions.value = response.items
+    permissions.value = response.items || []
     pagination.total = response.total
-  } catch (error) {
-    message.error('Failed to load permissions')
+    pagination.total_pages = response.total_pages
+  } catch (error: any) {
+    console.error('Failed to load permission routes:', error)
+    message.error(error.response?.data?.message || 'Failed to load permission routes')
   }
 }
 
 const loadAssignments = async () => {
   try {
-    const response = await permissionApi.getRoleAssignments({
+    const response = await permissionApi.getPermissionRouteAssignments({
       page: pagination.current,
       page_size: pagination.pageSize
     })
-    assignments.value = response.items
+    assignments.value = response.items || []
     pagination.total = response.total
-  } catch (error) {
-    message.error('Failed to load role assignments')
+    pagination.total_pages = response.total_pages
+  } catch (error: any) {
+    console.error('Failed to load permission route assignments:', error)
+    message.error(error.response?.data?.message || 'Failed to load permission route assignments')
   }
 }
 
 const loadUsers = async () => {
   try {
-    const response = await userApi.getUsers({ page: 1, page_size: 1000 })
-    users.value = response.items
-  } catch (error) {
-    message.error('Failed to load users')
+    const response = await userApi.getUsers({
+      page: 1,
+      page_size: 1000
+    })
+    users.value = response.items || []
+  } catch (error: any) {
+    console.error('Failed to load users:', error)
   }
+}
+
+const loadOrganizations = async () => {
+  try {
+    const response = await organizationApi.getOrganizations({
+      page: 1,
+      page_size: 1000
+    })
+    organizations.value = response.items || []
+  } catch (error: any) {
+    console.error('Failed to load organizations:', error)
+  }
+}
+
+const loadApplications = async () => {
+  try {
+    const response = await applicationApi.getApplications({
+      page: 1,
+      page_size: 1000
+    })
+    applications.value = response.items || []
+  } catch (error: any) {
+    console.error('Failed to load applications:', error)
+  }
+}
+
+const loadApplicationGroups = async () => {
+  try {
+    const response = await applicationApi.getApplicationGroups({
+      page: 1,
+      page_size: 1000
+    })
+    applicationGroups.value = response.items || []
+  } catch (error: any) {
+    console.error('Failed to load application groups:', error)
+  }
+}
+
+const handleTabChange = (key: string) => {
+  activeTab.value = key
+  loadData()
 }
 
 const handleTableChange = (pag: any) => {
@@ -460,93 +513,28 @@ const handleTableChange = (pag: any) => {
   loadData()
 }
 
-// Role methods
-const showRoleModal = () => {
-  editingRole.value = false
-  Object.assign(roleForm, {
-    name: '',
-    code: '',
-    description: '',
-    type: 'custom',
-    scope: 'global',
-    status: 'active'
-  })
-  roleModalVisible.value = true
-}
-
-const editRole = (role: Role) => {
-  editingRole.value = true
-  Object.assign(roleForm, {
-    name: role.name,
-    code: role.code,
-    description: role.description,
-    type: role.type,
-    scope: role.scope,
-    status: role.status
-  })
-  roleModalVisible.value = true
-}
-
-const handleRoleSubmit = async () => {
-  try {
-    if (editingRole.value) {
-      // Find the role ID from the current roles list
-      const currentRole = roles.value.find(r => r.code === roleForm.code)
-      if (currentRole) {
-        await permissionApi.updateRole(currentRole.id, roleForm)
-        message.success('Role updated successfully')
-      }
-    } else {
-      await permissionApi.createRole(roleForm)
-      message.success('Role created successfully')
-    }
-    roleModalVisible.value = false
-    loadData()
-  } catch (error: any) {
-    message.error(error.response?.data?.message || 'Failed to save role')
-  }
-}
-
-const handleRoleCancel = () => {
-  roleModalVisible.value = false
-}
-
-const deleteRole = async (id: string) => {
-  try {
-    await permissionApi.deleteRole(id)
-    message.success('Role deleted successfully')
-    loadData()
-  } catch (error: any) {
-    message.error(error.response?.data?.message || 'Failed to delete role')
-  }
-}
-
 // Permission methods
 const showPermissionModal = () => {
-  editingPermission.value = false
+  editingPermission.value = null
   Object.assign(permissionForm, {
     name: '',
     code: '',
-    resource: '',
-    action: 'read',
     description: '',
-    category: 'system',
-    is_system: false,
+    applications: [],
+    groups: [],
     status: 'active'
   })
   permissionModalVisible.value = true
 }
 
-const editPermission = (permission: Permission) => {
-  editingPermission.value = true
+const editPermission = (permission: any) => {
+  editingPermission.value = permission
   Object.assign(permissionForm, {
     name: permission.name,
     code: permission.code,
-    resource: permission.resource,
-    action: permission.action,
     description: permission.description,
-    category: permission.category,
-    is_system: permission.is_system,
+    applications: permission.applications || [],
+    groups: permission.application_groups || [],
     status: permission.status
   })
   permissionModalVisible.value = true
@@ -554,21 +542,31 @@ const editPermission = (permission: Permission) => {
 
 const handlePermissionSubmit = async () => {
   try {
+    await permissionFormRef.value?.validate()
     if (editingPermission.value) {
-      // Find the permission ID from the current permissions list
-      const currentPermission = permissions.value.find(p => p.code === permissionForm.code)
-      if (currentPermission) {
-        await permissionApi.updatePermission(currentPermission.id, permissionForm)
-        message.success('Permission updated successfully')
-      }
+      await permissionApi.updatePermissionRoute(editingPermission.value.id, {
+        name: permissionForm.name,
+        description: permissionForm.description,
+        applications: permissionForm.applications,
+        application_groups: permissionForm.groups,
+        status: permissionForm.status
+      })
+      message.success('Permission route updated successfully')
     } else {
-      await permissionApi.createPermission(permissionForm)
-      message.success('Permission created successfully')
+      await permissionApi.createPermissionRoute({
+        name: permissionForm.name,
+        code: permissionForm.code,
+        description: permissionForm.description,
+        applications: permissionForm.applications,
+        application_groups: permissionForm.groups,
+        status: permissionForm.status
+      })
+      message.success('Permission route created successfully')
     }
     permissionModalVisible.value = false
     loadData()
   } catch (error: any) {
-    message.error(error.response?.data?.message || 'Failed to save permission')
+    message.error(error.response?.data?.message || 'Please check the form')
   }
 }
 
@@ -576,46 +574,44 @@ const handlePermissionCancel = () => {
   permissionModalVisible.value = false
 }
 
-const deletePermission = async (id: string) => {
+const deletePermission = async (permissionId: string) => {
   try {
-    await permissionApi.deletePermission(id)
-    message.success('Permission deleted successfully')
+    await permissionApi.deletePermissionRoute(permissionId)
+    message.success('Permission route deleted successfully')
     loadData()
   } catch (error: any) {
-    message.error(error.response?.data?.message || 'Failed to delete permission')
+    message.error(error.response?.data?.message || 'Failed to delete permission route')
   }
 }
 
 // Assignment methods
 const showAssignmentModal = () => {
-  editingAssignment.value = false
+  editingAssignment.value = null
   Object.assign(assignmentForm, {
-    user_id: '',
-    role_id: '',
+    assigneeType: 'user',
+    userId: '',
+    organizationId: '',
+    permissionId: '',
     status: 'active'
   })
   assignmentModalVisible.value = true
-  loadUsers() // Load users when opening the modal
 }
 
-const editAssignment = (assignment: RoleAssignment) => {
-  editingAssignment.value = true
-  Object.assign(assignmentForm, {
-    user_id: assignment.user_id,
-    role_id: assignment.role_id,
-    status: assignment.status
-  })
-  assignmentModalVisible.value = true
-}
 
 const handleAssignmentSubmit = async () => {
   try {
-    await permissionApi.assignRole(assignmentForm)
-    message.success('Role assigned successfully')
+    await assignmentFormRef.value?.validate()
+    await permissionApi.assignPermissionRoute({
+      permission_route_id: assignmentForm.permissionId,
+      assignee_type: assignmentForm.assigneeType,
+      assignee_id: assignmentForm.assigneeType === 'user' ? assignmentForm.userId : assignmentForm.organizationId,
+      status: assignmentForm.status
+    })
+    message.success('Permission route assigned successfully')
     assignmentModalVisible.value = false
     loadData()
   } catch (error: any) {
-    message.error(error.response?.data?.message || 'Failed to assign role')
+    message.error(error.response?.data?.message || 'Please check the form')
   }
 }
 
@@ -623,40 +619,58 @@ const handleAssignmentCancel = () => {
   assignmentModalVisible.value = false
 }
 
-const removeAssignment = async (assignment: RoleAssignment) => {
-  try {
-    await permissionApi.removeRole(assignment.user_id, assignment.role_id)
-    message.success('Role assignment removed successfully')
-    loadData()
-  } catch (error: any) {
-    message.error(error.response?.data?.message || 'Failed to remove role assignment')
+const handleAssigneeTypeChange = () => {
+  // 清空相关字段
+  assignmentForm.userId = ''
+  assignmentForm.organizationId = ''
+}
+
+const handleCodeInput = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const value = target.value
+  // 自动转换为大写，只允许字母、数字和下划线
+  const formattedValue = value.toUpperCase().replace(/[^A-Z0-9_]/g, '')
+  permissionForm.code = formattedValue
+}
+
+const handleNameInput = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const value = target.value
+  // 自动生成Route Code：转换为大写，空格替换为下划线，移除特殊字符
+  const generatedCode = value
+    .toUpperCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+  
+  // 只有当Route Code为空或者与生成的代码不同时才自动更新
+  if (!permissionForm.code || permissionForm.code === '') {
+    permissionForm.code = generatedCode
   }
 }
 
-// Filter methods
-const filterUserOption = (input: string, option: any) => {
-  return option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+const removeAssignment = async (assignment: any) => {
+  try {
+    await permissionApi.removePermissionRouteAssignment(
+      assignment.assignee_type,
+      assignment.assignee_id,
+      assignment.permission_route_id
+    )
+    message.success('Permission route assignment removed successfully')
+    loadData()
+  } catch (error: any) {
+    message.error(error.response?.data?.message || 'Failed to remove assignment')
+  }
 }
 
-const filterRoleOption = (input: string, option: any) => {
-  return option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
-}
-
-// View role permissions
-const viewRolePermissions = (role: Role) => {
-  message.info(`Viewing permissions for role: ${role.name}`)
-  // TODO: Implement permission view modal
-}
-
-// Watch for tab changes
-const handleTabChange = (key: string) => {
-  activeTab.value = key
-  pagination.current = 1
-  loadData()
-}
-
+// Lifecycle
 onMounted(() => {
   loadData()
+  loadUsers()
+  loadOrganizations()
+  loadApplications()
+  loadApplicationGroups()
 })
 </script>
 
@@ -665,20 +679,27 @@ onMounted(() => {
   padding: 24px;
 }
 
+.form-help-text {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
 .page-header {
   margin-bottom: 24px;
 }
 
 .page-header h2 {
+  margin: 0 0 8px 0;
   font-size: 24px;
   font-weight: 600;
-  color: #1890ff;
-  margin: 0 0 8px 0;
 }
 
 .page-header p {
-  color: #666;
   margin: 0;
+  color: #666;
+  font-size: 14px;
 }
 
 .tab-content {
@@ -690,16 +711,8 @@ onMounted(() => {
 
 .actions-bar {
   margin-bottom: 16px;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .permissions-page {
-    padding: 16px;
-  }
-  
-  .tab-content {
-    padding: 16px;
-  }
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 </style>

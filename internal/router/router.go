@@ -176,6 +176,27 @@ func setupConsoleRoutes(console *gin.RouterGroup, jwtManager *utils.JWTManager) 
 		roleAssignments.DELETE("/:userID/:roleID", handlers.RemoveRoleFromUserHandler)
 	}
 
+	// 权限路由管理（需要管理员权限）
+	permissionRoutes := console.Group("/permission-routes")
+	permissionRoutes.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	permissionRoutes.Use(middleware.AdminMiddleware())
+	{
+		permissionRoutes.GET("", handlers.GetPermissionRoutesHandler)
+		permissionRoutes.POST("", handlers.CreatePermissionRouteHandler)
+		permissionRoutes.PUT("/:id", handlers.UpdatePermissionRouteHandler)
+		permissionRoutes.DELETE("/:id", handlers.DeletePermissionRouteHandler)
+	}
+
+	// 权限路由分配管理（需要管理员权限）
+	permissionRouteAssignments := console.Group("/permission-route-assignments")
+	permissionRouteAssignments.Use(middleware.AuthMiddleware(jwtManager, sessionManager))
+	permissionRouteAssignments.Use(middleware.AdminMiddleware())
+	{
+		permissionRouteAssignments.GET("", handlers.GetPermissionRouteAssignmentsHandler)
+		permissionRouteAssignments.POST("", handlers.AssignPermissionRouteHandler)
+		permissionRouteAssignments.DELETE("/:assigneeType/:assigneeId/:permissionRouteId", handlers.RemovePermissionRouteAssignmentHandler)
+	}
+
 	// 应用管理（需要管理员权限）
 	applications := console.Group("/applications")
 	applications.Use(middleware.AuthMiddleware(jwtManager, sessionManager))

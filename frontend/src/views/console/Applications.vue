@@ -560,6 +560,8 @@ const showAddAppModal = () => {
 const editApp = (app: any) => {
   modalTitle.value = 'Edit Application'
   editingApp.value = app
+  
+  // 填充基本数据
   Object.assign(formData, {
     name: app.name,
     type: app.protocol || app.type,
@@ -569,6 +571,33 @@ const editApp = (app: any) => {
     homepageUrl: app.home_page_url || app.homepage_url,
     logoUrl: app.logo
   })
+  
+  // 填充配置数据 - 从应用对象中直接获取配置字段
+  const config = {
+    clientId: app.client_id || '',
+    clientSecret: app.client_secret || '',
+    redirectUris: app.redirect_uris || '',
+    scopes: app.scopes ? (Array.isArray(app.scopes) ? app.scopes : app.scopes.split(',')) : [],
+    grantTypes: app.grant_types || '',
+    responseTypes: app.response_types || '',
+    accessTokenTTL: app.access_token_ttl || 3600,
+    refreshTokenTTL: app.refresh_token_ttl || 604800,
+    entityId: app.entity_id || '',
+    acsUrl: app.acs_url || '',
+    sloUrl: app.slo_url || '',
+    certificate: app.certificate || '',
+    signatureAlgorithm: app.signature_algorithm || 'sha256',
+    digestAlgorithm: app.digest_algorithm || 'sha256',
+    serviceUrl: app.service_url || '',
+    gateway: app.gateway || false,
+    renew: app.renew || false,
+    ldapUrl: app.ldap_url || '',
+    baseDn: app.base_dn || '',
+    bindDn: app.bind_dn || '',
+    bindPassword: app.bind_password || ''
+  }
+  Object.assign(formData.config, config)
+  
   modalVisible.value = true
 }
 
@@ -651,7 +680,7 @@ const handleModalOk = async () => {
         clientId: formData.config.clientId,
         clientSecret: formData.config.clientSecret,
         redirectUris: formData.config.redirectUris,
-        scopes: formData.config.scopes
+        scopes: Array.isArray(formData.config.scopes) ? formData.config.scopes.join(' ') : formData.config.scopes
       }),
       ...(formData.type === 'saml' && {
         entity_id: formData.config.entityId,
@@ -670,9 +699,9 @@ const handleModalOk = async () => {
         clientId: formData.config.clientId,
         clientSecret: formData.config.clientSecret,
         redirectUris: formData.config.redirectUris,
-        scopes: formData.config.scopes,
-        grantTypes: formData.config.grantTypes,
-        responseTypes: formData.config.responseTypes,
+        scopes: Array.isArray(formData.config.scopes) ? formData.config.scopes.join(' ') : formData.config.scopes,
+        grantTypes: Array.isArray(formData.config.grantTypes) ? formData.config.grantTypes.join(' ') : formData.config.grantTypes,
+        responseTypes: Array.isArray(formData.config.responseTypes) ? formData.config.responseTypes.join(' ') : formData.config.responseTypes,
         accessTokenTTL: formData.config.accessTokenTTL,
         refreshTokenTTL: formData.config.refreshTokenTTL
       }),
@@ -689,6 +718,9 @@ const handleModalOk = async () => {
       (requestData as any).groupId = formData.groupId
     }
     
+    // 调试：打印发送的数据
+    console.log('Sending request data:', JSON.stringify(requestData, null, 2))
+    
     if (editingApp.value) {
       await applicationApi.updateApplication(editingApp.value.id, requestData)
       message.success('Application updated successfully')
@@ -699,8 +731,10 @@ const handleModalOk = async () => {
     
     modalVisible.value = false
     loadApplications()
-  } catch (error) {
-    message.error('Please check the form')
+  } catch (error: any) {
+    console.error('Error details:', error)
+    console.error('Error response:', error.response?.data)
+    message.error(error.response?.data?.message || 'Please check the form')
   }
 }
 

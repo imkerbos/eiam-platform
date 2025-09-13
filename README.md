@@ -150,38 +150,55 @@ npm run dev
 - 用户名/邮箱 + 密码登录
 - OTP双因素认证
 - JWT令牌管理（Access Token + Refresh Token）
-- 密码重置
-- 会话管理
+- 7天免密码登录（Refresh Token自动续期）
+- 密码重置和修改
+- 智能会话管理（单设备/多设备登录）
+- 自动Token刷新和重试机制
 
 ### 👥 用户管理
 - 用户创建、编辑、删除
-- 用户状态管理
-- 密码策略
-- 用户资料管理
+- 用户状态管理（启用/禁用/锁定）
+- 密码策略配置
+- 用户资料管理（头像上传）
+- 用户会话监控和强制下线
+- 登录日志和审计
 
 ### 🏢 组织架构
 - 多级组织架构（总部、分公司、部门、小组）
 - 组织关系管理
-- 组织管理员
+- 组织管理员分配
+- 组织树形结构展示
 
-### 🔑 角色权限
-- 基于角色的访问控制（RBAC）
-- 权限管理
-- 角色分配
-- 权限继承
+### 🔑 权限管理
+- **权限路由系统**: 基于应用/应用组的访问控制
+- **权限分配**: 支持分配给用户或组织
+- **系统管理员**: 系统级权限管理
+- **应用访问控制**: 细粒度的应用访问权限
 
 ### 📱 应用管理
 - 应用注册和管理
-- 应用分组
-- OAuth2配置
-- SAML配置
-- 应用访问控制
+- 应用分组管理
+- **协议支持**:
+  - OAuth2配置
+  - SAML配置（IdP/SP模式）
+  - CAS配置
+  - LDAP配置
+- 应用访问统计
+- 应用删除保护（关联检查）
+
+### 📊 系统监控
+- **Dashboard统计**: 用户数、组织数、在线用户数、应用数
+- **实时监控**: 在线用户统计、活跃会话管理
+- **审计日志**: 操作日志、登录日志
+- **系统状态**: 数据库、Redis、API服务状态监控
 
 ### 🎨 前端功能
 - **Console管理端**: 系统管理界面
 - **Portal用户端**: 用户自助服务界面
 - 响应式设计
 - 现代化UI/UX
+- 国际化支持（英文界面）
+- 实时数据更新
 
 ## 🔧 开发指南
 
@@ -233,29 +250,50 @@ npm run type-check
 
 ### 认证相关
 
-#### 登录
+#### Console登录
 ```http
-POST /api/v1/auth/login
+POST /api/v1/console/auth/login
 Content-Type: application/json
 
 {
   "username": "admin",
-  "password": "password",
+  "password": "admin123",
   "otp_code": "123456"  // 可选
+}
+```
+
+#### Portal登录
+```http
+POST /api/v1/portal/auth/login
+Content-Type: application/json
+
+{
+  "username": "user",
+  "password": "password123"
 }
 ```
 
 #### 刷新令牌
 ```http
-POST /api/v1/auth/refresh
-Authorization: Bearer <refresh_token>
+POST /api/v1/console/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "your_refresh_token"
+}
+```
+
+#### 登出
+```http
+POST /api/v1/console/auth/logout
+Authorization: Bearer <access_token>
 ```
 
 ### 用户管理
 
 #### 获取用户列表
 ```http
-GET /api/v1/console/users?page=1&size=10
+GET /api/v1/console/users?page=1&page_size=10&search=keyword
 Authorization: Bearer <access_token>
 ```
 
@@ -268,9 +306,98 @@ Content-Type: application/json
 {
   "username": "newuser",
   "email": "user@example.com",
-  "displayName": "New User",
-  "organizationId": "1"
+  "display_name": "New User",
+  "organization_id": "org-uuid",
+  "password": "password123"
 }
+```
+
+#### 获取用户会话
+```http
+GET /api/v1/console/sessions?page=1&page_size=10
+Authorization: Bearer <access_token>
+```
+
+### 应用管理
+
+#### 获取应用列表
+```http
+GET /api/v1/console/applications?page=1&page_size=10
+Authorization: Bearer <access_token>
+```
+
+#### 创建应用
+```http
+POST /api/v1/console/applications
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "name": "My App",
+  "description": "Application description",
+  "group_id": "group-uuid",
+  "protocol": "oauth2",
+  "config": {
+    "client_id": "app_client_id",
+    "client_secret": "app_client_secret",
+    "redirect_uris": "https://app.com/callback"
+  }
+}
+```
+
+### 权限管理
+
+#### 获取权限路由
+```http
+GET /api/v1/console/permission-routes?page=1&page_size=10
+Authorization: Bearer <access_token>
+```
+
+#### 创建权限路由
+```http
+POST /api/v1/console/permission-routes
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "name": "App Access Route",
+  "code": "APP_ACCESS",
+  "description": "Access to specific applications",
+  "application_ids": ["app-uuid-1", "app-uuid-2"]
+}
+```
+
+#### 分配权限路由
+```http
+POST /api/v1/console/permission-route-assignments
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "permission_route_id": "route-uuid",
+  "assignee_type": "user",  // "user" 或 "organization"
+  "assignee_id": "user-uuid"
+}
+```
+
+### 系统监控
+
+#### 获取Dashboard数据
+```http
+GET /api/v1/console/dashboard
+Authorization: Bearer <access_token>
+```
+
+#### 获取审计日志
+```http
+GET /api/v1/console/logs/audit?page=1&page_size=10
+Authorization: Bearer <access_token>
+```
+
+#### 获取登录日志
+```http
+GET /api/v1/console/logs/login?page=1&page_size=10
+Authorization: Bearer <access_token>
 ```
 
 ## 🔒 安全特性

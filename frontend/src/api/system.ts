@@ -17,7 +17,7 @@ export interface PaginatedResponse<T> {
 export interface DashboardStats {
   totalUsers: number
   totalOrganizations: number
-  activeSessions: number
+  onlineUsers: number
   totalApplications: number
 }
 

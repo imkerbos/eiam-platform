@@ -24,9 +24,9 @@
           <a-card>
             <template #title>
               <SafetyOutlined />
-              Active Sessions
+              Online Users
             </template>
-            <div class="stat-number">{{ stats.activeSessions }}</div>
+            <div class="stat-number">{{ stats.onlineUsers }}</div>
           </a-card>
         </a-col>
         <a-col :span="6">

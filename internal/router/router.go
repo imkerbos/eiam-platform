@@ -25,6 +25,9 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 	// 创建Gin引擎
 	r := gin.New()
 
+	// 加载HTML模板
+	r.LoadHTMLGlob("templates/*")
+
 	// 获取sessionManager实例
 	sessionManager := handlers.GetSessionManager()
 
@@ -52,6 +55,16 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 
 	// 公开API端点（不需要认证）
 	r.GET("/public/site-info", handlers.GetPublicSiteInfoHandler)
+
+	// CAS协议端点（不需要认证）
+	cas := r.Group("/cas")
+	{
+		cas.GET("/login", handlers.CASLoginHandler)
+		cas.POST("/login", handlers.CASLoginSubmitHandler)
+		cas.GET("/validate", handlers.CASValidateHandler)
+		cas.GET("/serviceValidate", handlers.CASServiceValidateHandler)
+		cas.GET("/logout", handlers.CASLogoutHandler)
+	}
 
 	// API路由组
 	api := r.Group("/api")

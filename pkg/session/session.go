@@ -332,7 +332,58 @@ func (sm *SessionManager) GetActiveSessionsCount(ctx context.Context) (int64, er
 	if err != nil {
 		return 0, err
 	}
-	return int64(len(keys)), nil
+
+	// 验证每个会话是否真的有效（未过期）
+	activeCount := int64(0)
+	for _, key := range keys {
+		sessionID := strings.TrimPrefix(key, "session:")
+		if sm.IsSessionValid(ctx, sessionID) {
+			activeCount++
+		}
+	}
+
+	sm.logger.Info("Active sessions count calculated",
+		zap.Int64("total_keys", int64(len(keys))),
+		zap.Int64("active_sessions", activeCount),
+	)
+
+	return activeCount, nil
+}
+
+// GetOnlineUsersCount 获取在线用户数量（去重的用户数）
+func (sm *SessionManager) GetOnlineUsersCount(ctx context.Context) (int64, error) {
+	pattern := "session:*"
+	keys, err := sm.redisClient.Keys(ctx, pattern).Result()
+	if err != nil {
+		return 0, err
+	}
+
+	// 收集所有活跃会话的用户ID（去重）
+	userIDs := make(map[string]bool)
+	validSessions := int64(0)
+
+	for _, key := range keys {
+		sessionID := strings.TrimPrefix(key, "session:")
+		sessionInfo, err := sm.GetSession(ctx, sessionID)
+		if err != nil {
+			// 会话无效或过期，跳过
+			continue
+		}
+
+		// 记录用户ID
+		userIDs[sessionInfo.UserID] = true
+		validSessions++
+	}
+
+	onlineUsersCount := int64(len(userIDs))
+
+	sm.logger.Info("Online users count calculated",
+		zap.Int64("total_keys", int64(len(keys))),
+		zap.Int64("valid_sessions", validSessions),
+		zap.Int64("online_users", onlineUsersCount),
+	)
+
+	return onlineUsersCount, nil
 }
 
 // IsSessionValid 检查会话是否有效

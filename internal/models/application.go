@@ -56,6 +56,17 @@ type Application struct {
 	SignatureAlgorithm string `json:"signature_algorithm" gorm:"type:varchar(100)"`
 	DigestAlgorithm    string `json:"digest_algorithm" gorm:"type:varchar(100)"`
 
+	// CAS 特有配置
+	ServiceURL string `json:"service_url" gorm:"type:varchar(500)"`
+	Gateway    bool   `json:"gateway" gorm:"default:false"`
+	Renew      bool   `json:"renew" gorm:"default:false"`
+
+	// LDAP 特有配置
+	LdapURL      string `json:"ldap_url" gorm:"type:varchar(500)"`
+	BaseDN       string `json:"base_dn" gorm:"type:varchar(500)"`
+	BindDN       string `json:"bind_dn" gorm:"type:varchar(500)"`
+	BindPassword string `json:"bind_password" gorm:"type:varchar(500)"`
+
 	// 关联关系
 	Group       *ApplicationGroup `json:"group" gorm:"foreignKey:GroupID"`
 	Users       []User            `json:"users" gorm:"many2many:user_applications;"`

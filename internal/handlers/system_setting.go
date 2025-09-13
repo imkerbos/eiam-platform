@@ -918,7 +918,7 @@ func GetTopLoginApplications(c *gin.Context) {
 	for rows.Next() {
 		var app map[string]interface{}
 		var id, name, description string
-		var groupName *string  // 改为指针类型以处理NULL值
+		var groupName *string // 改为指针类型以处理NULL值
 		var accessCount int
 		var lastAccessTime *time.Time
 

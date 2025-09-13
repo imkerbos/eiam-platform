@@ -639,7 +639,7 @@ func getCategoryFromKey(key string) string {
 type DashboardStats struct {
 	TotalUsers         int `json:"totalUsers"`
 	TotalOrganizations int `json:"totalOrganizations"`
-	ActiveSessions     int `json:"activeSessions"`
+	OnlineUsers        int `json:"onlineUsers"`
 	TotalApplications  int `json:"totalApplications"`
 }
 
@@ -700,18 +700,18 @@ func GetDashboardData(c *gin.Context) {
 	}
 	stats.TotalApplications = int(appCount)
 
-	// Get active sessions count from Redis
+	// Get online users count from Redis
 	if sessionManager != nil {
 		ctx := context.Background()
-		activeSessionsCount, err := sessionManager.GetActiveSessionsCount(ctx)
+		onlineUsersCount, err := sessionManager.GetOnlineUsersCount(ctx)
 		if err != nil {
-			logger.ErrorError("Failed to get active sessions count", zap.Error(err))
-			stats.ActiveSessions = 0
+			logger.ErrorError("Failed to get online users count", zap.Error(err))
+			stats.OnlineUsers = 0
 		} else {
-			stats.ActiveSessions = int(activeSessionsCount)
+			stats.OnlineUsers = int(onlineUsersCount)
 		}
 	} else {
-		stats.ActiveSessions = 0
+		stats.OnlineUsers = 0
 	}
 
 	// Get recent login activities
@@ -917,7 +917,8 @@ func GetTopLoginApplications(c *gin.Context) {
 
 	for rows.Next() {
 		var app map[string]interface{}
-		var id, name, description, groupName string
+		var id, name, description string
+		var groupName *string  // 改为指针类型以处理NULL值
 		var accessCount int
 		var lastAccessTime *time.Time
 
@@ -927,11 +928,17 @@ func GetTopLoginApplications(c *gin.Context) {
 			continue
 		}
 
+		// 处理groupName的NULL值
+		groupNameStr := ""
+		if groupName != nil {
+			groupNameStr = *groupName
+		}
+
 		app = map[string]interface{}{
 			"id":               id,
 			"name":             name,
 			"description":      description,
-			"group_name":       groupName,
+			"group_name":       groupNameStr,
 			"access_count":     accessCount,
 			"last_access_time": formatTimeAgo(lastAccessTime),
 		}
@@ -989,7 +996,7 @@ func GetSystemStats(c *gin.Context) {
 
 	// Placeholder values
 	stats.TotalApplications = 0
-	stats.ActiveSessions = 1
+	stats.OnlineUsers = 1
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,

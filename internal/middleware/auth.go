@@ -71,20 +71,22 @@ func AuthMiddleware(jwtManager *utils.JWTManager, sessionManager *session.Sessio
 		}
 
 		// 验证会话是否有效（如果启用了会话管理且有session_id）
+		// 注意：这里不强制要求会话必须存在，因为Refresh Token可能仍然有效
 		if sessionManager != nil && claims.SessionID != "" {
 			ctx := context.Background()
-			if !sessionManager.IsSessionValid(ctx, claims.SessionID) {
-				logger.Warn("Session is invalid",
+			_, err := sessionManager.GetSession(ctx, claims.SessionID)
+			if err != nil {
+				// 会话不存在或过期，但不直接拒绝，因为Refresh Token可能仍然有效
+				logger.Info("Session not found or expired, but continuing with JWT validation",
 					zap.String("user_id", claims.UserID),
 					zap.String("username", claims.Username),
 					zap.String("session_id", claims.SessionID),
+					zap.Error(err),
 				)
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"code":    401,
-					"message": "Session expired",
-				})
-				c.Abort()
-				return
+				// 不返回错误，继续处理请求
+			} else {
+				// 会话存在且有效，更新活动时间
+				sessionManager.UpdateActivity(ctx, claims.SessionID)
 			}
 		}
 
@@ -181,7 +183,7 @@ func RoleMiddleware(requiredRoles ...string) gin.HandlerFunc {
 
 // AdminMiddleware admin permission middleware
 func AdminMiddleware() gin.HandlerFunc {
-	return RoleMiddleware("admin")
+	return RoleMiddleware("admin", "SYSTEM_ADMIN")
 }
 
 // GetCurrentUserID get current user ID
@@ -215,7 +217,7 @@ func GetCurrentUserRoles(c *gin.Context) []string {
 func IsAdmin(c *gin.Context) bool {
 	roles := GetCurrentUserRoles(c)
 	for _, role := range roles {
-		if role == "admin" {
+		if role == "admin" || role == "SYSTEM_ADMIN" {
 			return true
 		}
 	}

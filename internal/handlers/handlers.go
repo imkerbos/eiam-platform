@@ -355,8 +355,32 @@ func ConsoleRefreshTokenHandler(c *gin.Context) {
 		return
 	}
 
+	// 获取用户角色
+	var roles []string
+	var userRoles []models.Role
+	if err := database.DB.Table("user_roles").
+		Select("roles.*").
+		Joins("JOIN roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ?", user.ID).
+		Unscoped().
+		Find(&userRoles).Error; err == nil {
+		for _, role := range userRoles {
+			roles = append(roles, role.Code)
+		}
+		logger.Info("Loaded user roles during token refresh",
+			zap.String("username", user.Username),
+			zap.Strings("roles", roles),
+			zap.Int("role_count", len(userRoles)),
+		)
+	} else {
+		logger.ErrorError("Failed to load user roles during token refresh",
+			zap.String("username", user.Username),
+			zap.Error(err),
+		)
+	}
+
 	// 生成新的access token
-	accessToken, err := utils.GenerateAccessTokenWithUserInfo(user.ID, user.Username, user.Email, user.DisplayName, []string{}, []string{}, config.AppConfig.JWT.Secret, config.AppConfig.JWT.AccessTokenExpire)
+	accessToken, err := utils.GenerateAccessTokenWithUserInfo(user.ID, user.Username, user.Email, user.DisplayName, roles, []string{}, config.AppConfig.JWT.Secret, config.AppConfig.JWT.AccessTokenExpire)
 	if err != nil {
 		logger.ErrorError("Failed to generate access token for refresh",
 			zap.String("user_id", user.ID),
@@ -799,6 +823,69 @@ func PortalRefreshTokenHandler(c *gin.Context) {
 		for _, role := range userRoles {
 			roles = append(roles, role.Code)
 		}
+		logger.Info("Loaded user roles during token refresh",
+			zap.String("username", user.Username),
+			zap.Strings("roles", roles),
+			zap.Int("role_count", len(userRoles)),
+		)
+	} else {
+		logger.ErrorError("Failed to load user roles during token refresh",
+			zap.String("username", user.Username),
+			zap.Error(err),
+		)
+	}
+
+	// 检查会话是否存在，如果不存在则创建新会话
+	sessionManager := GetSessionManager()
+	var sessionID string
+	if sessionManager != nil {
+		ctx := context.Background()
+		if claims.SessionID != "" {
+			// 尝试获取现有会话
+			_, err := sessionManager.GetSession(ctx, claims.SessionID)
+			if err != nil {
+				// 会话不存在，创建新会话
+				cfg := config.GetConfig()
+				sessionID, err = sessionManager.CreateSession(
+					ctx,
+					user.ID,
+					user.Username,
+					user.Email,
+					user.DisplayName,
+					c.ClientIP(),
+					c.GetHeader("User-Agent"),
+					utils.GenerateTradeIDString("token"),
+					time.Duration(cfg.JWT.RefreshTokenExpire)*time.Second,
+				)
+				if err != nil {
+					logger.ErrorError("Failed to create new session during token refresh", zap.Error(err))
+					// 继续使用原来的sessionID
+					sessionID = claims.SessionID
+				}
+			} else {
+				// 会话存在，使用现有会话ID
+				sessionID = claims.SessionID
+			}
+		} else {
+			// 没有sessionID，创建新会话
+			cfg := config.GetConfig()
+			sessionID, err = sessionManager.CreateSession(
+				ctx,
+				user.ID,
+				user.Username,
+				user.Email,
+				user.DisplayName,
+				c.ClientIP(),
+				c.GetHeader("User-Agent"),
+				utils.GenerateTradeIDString("token"),
+				time.Duration(cfg.JWT.RefreshTokenExpire)*time.Second,
+			)
+			if err != nil {
+				logger.ErrorError("Failed to create new session during token refresh", zap.Error(err))
+			}
+		}
+	} else {
+		sessionID = claims.SessionID
 	}
 
 	// 生成新的access token
@@ -809,7 +896,7 @@ func PortalRefreshTokenHandler(c *gin.Context) {
 		DisplayName: user.DisplayName,
 		Roles:       roles,
 		Permissions: []string{}, // 暂时为空
-		SessionID:   claims.SessionID,
+		SessionID:   sessionID,
 		TradeID:     utils.GenerateTradeIDString("portal_refresh"),
 	}
 

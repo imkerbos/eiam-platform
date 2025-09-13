@@ -150,7 +150,11 @@ request.interceptors.response.use(
       // Handle other HTTP status codes
       switch (status) {
         case 403:
-          message.error('权限不足，无法访问此资源')
+          // 权限不足时，直接清除token并跳转到登录页
+          // 这通常表示token中的角色信息已损坏
+          TokenManager.clearTokens()
+          message.error('登录已过期，请重新登录')
+          router.push('/login')
           break
         case 404:
           message.error('请求的资源不存在')

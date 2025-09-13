@@ -31,7 +31,7 @@ redis:
 # JWT configuration
 jwt:
   secret: "7INRsRORIP6OoPQP"
-  access_token_expire: 3600 # seconds (1 hour)
+  access_token_expire: 6000 # seconds (1 minute for testing)
   refresh_token_expire: 604800 # seconds (7 days)
   issuer: "eiam-platform"
 

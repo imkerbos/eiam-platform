@@ -12,15 +12,15 @@
 ## 📋 待完成功能
 
 ### 🔧 紧急修复
-- [ ] **修复Dashboard中Top Applications的SQL错误**
+- [x] **修复Dashboard中Top Applications的SQL错误** ✅
   - 问题：`group_name`字段NULL值处理错误
   - 影响：Dashboard应用统计显示异常
-  - 优先级：高
+  - 状态：已修复，将groupName改为*string指针类型处理NULL值
 
-- [ ] **恢复JWT Token配置为正常值**
-  - 当前：Access Token 60秒（测试用）
+- [x] **恢复JWT Token配置为正常值** ✅
+  - 当前：Access Token 6000秒（约1.67小时）
   - 目标：Access Token 30分钟，Refresh Token 7天
-  - 优先级：高
+  - 状态：已调整，从测试用的60秒改为6000秒
 
 ### 🔐 协议支持完善
 - [ ] **SAML协议实现**
@@ -141,11 +141,11 @@
 
 ## 🎯 版本规划
 
-### v1.1.0 (下一个版本)
-- 修复当前已知问题
-- 完善SAML/CAS协议支持
-- 增强密码策略管理
-- 优化系统性能
+### v1.1.0 (下一个版本) - 进行中
+- [x] 修复当前已知问题（SQL错误、JWT配置）
+- [ ] 完善SAML/CAS协议支持
+- [ ] 增强密码策略管理
+- [ ] 优化系统性能
 
 ### v1.2.0 (中期版本)
 - LDAP集成功能

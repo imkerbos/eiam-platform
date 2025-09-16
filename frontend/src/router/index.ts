@@ -78,6 +78,24 @@ const routes: RouteRecordRaw[] = [
         name: 'ApplicationGroups',
         component: () => import('@/views/console/ApplicationGroups.vue'),
         meta: { title: 'Application Groups', requiresAdmin: true }
+      },
+      {
+        path: 'cas-server-info',
+        name: 'CASServerInfo',
+        component: () => import('@/views/console/CASServerInfo.vue'),
+        meta: { title: 'CAS Server Information', requiresAdmin: true }
+      },
+      {
+        path: 'saml-server-info',
+        name: 'SAMLServerInfo',
+        component: () => import('@/views/console/SAMLServerInfo.vue'),
+        meta: { title: 'SAML Server Information', requiresAdmin: true }
+      },
+      {
+        path: 'oidc-server-info',
+        name: 'OIDCServerInfo',
+        component: () => import('@/views/console/OIDCServerInfo.vue'),
+        meta: { title: 'OIDC Server Information', requiresAdmin: true }
       }
     ]
   },

@@ -57,9 +57,10 @@ type Application struct {
 	DigestAlgorithm    string `json:"digest_algorithm" gorm:"type:varchar(100)"`
 
 	// CAS 特有配置
-	ServiceURL string `json:"service_url" gorm:"type:varchar(500)"`
-	Gateway    bool   `json:"gateway" gorm:"default:false"`
-	Renew      bool   `json:"renew" gorm:"default:false"`
+	ServiceURL      string `json:"service_url" gorm:"type:varchar(500)"`
+	Gateway         bool   `json:"gateway" gorm:"default:false"`
+	Renew           bool   `json:"renew" gorm:"default:false"`
+	AttributeMapping string `json:"attribute_mapping" gorm:"type:text"` // JSON格式的属性映射配置
 
 	// LDAP 特有配置
 	LdapURL      string `json:"ldap_url" gorm:"type:varchar(500)"`

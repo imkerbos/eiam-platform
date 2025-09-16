@@ -156,6 +156,51 @@
     </div>
 
     <script>
+        // 检查用户是否已经登录
+        async function checkExistingLogin() {
+            try {
+                // 尝试从localStorage获取token
+                const accessToken = localStorage.getItem('access_token');
+                if (accessToken) {
+                    // 验证token是否有效
+                    const response = await fetch('/api/v1/console/auth/me', {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        // 用户已登录，直接生成服务票据
+                        const serviceUrl = '{{.service}}';
+                        const renew = {{.renew}};
+                        
+                        if (!renew) {
+                            // 不是renew模式，直接重定向到CAS登录以生成票据
+                            window.location.href = `/cas/login?service=${encodeURIComponent(serviceUrl)}&auto=true`;
+                            return true;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.log('No existing login found:', error);
+            }
+            return false;
+        }
+        
+        // 页面加载时检查登录状态
+        window.addEventListener('load', async function() {
+            const hasExistingLogin = await checkExistingLogin();
+            if (hasExistingLogin) {
+                return; // 如果已登录，会重定向，不需要显示登录表单
+            }
+            
+            // 如果没有现有登录，显示登录表单
+            document.getElementById('loginForm').style.display = 'block';
+        });
+        
+        // 确保登录表单默认显示
+        document.getElementById('loginForm').style.display = 'block';
+        
         document.getElementById('loginForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
@@ -176,22 +221,44 @@
                 const response = await fetch('/cas/login', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: JSON.stringify({
+                    body: new URLSearchParams({
                         username: username,
                         password: password,
                         service: '{{.service}}',
-                        gateway: {{.gateway}},
-                        renew: {{.renew}}
+                        gateway: '{{.gateway}}',
+                        renew: '{{.renew}}'
                     })
                 });
                 
                 const result = await response.json();
                 
                 if (response.ok && result.code === 200) {
-                    // Redirect to service URL
-                    window.location.href = result.data.redirect_url;
+                    console.log('CAS login successful:', result.data);
+                    
+                    // 如果在iframe或弹窗中，发送消息给父窗口
+                    if (window.opener || window.parent !== window) {
+                        console.log('Sending message to parent window');
+                        const targetWindow = window.opener || window.parent;
+                        const message = {
+                            type: 'CAS_LOGIN_SUCCESS',
+                            ticket: result.data.ticket,
+                            redirect_url: result.data.redirect_url
+                        };
+                        console.log('Message to send:', message);
+                        targetWindow.postMessage(message, '*');
+                        
+                        // 关闭窗口
+                        if (window.opener) {
+                            console.log('Closing popup window');
+                            window.close();
+                        }
+                    } else {
+                        console.log('Direct redirect to service URL');
+                        // 直接重定向到service URL
+                        window.location.href = result.data.redirect_url;
+                    }
                 } else {
                     // Show error message
                     errorMessage.textContent = result.message || 'Login failed';

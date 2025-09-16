@@ -96,11 +96,12 @@ type LoginConfig struct {
 
 // IdPConfig IdP配置（用于对接外部SP）
 type IdPConfig struct {
-	DefaultSessionTimeout int  `mapstructure:"default_session_timeout"`
-	MaxConcurrentSessions int  `mapstructure:"max_concurrent_sessions"`
-	EnableSingleLogout    bool `mapstructure:"enable_single_logout"`
-	EnableRememberMe      bool `mapstructure:"enable_remember_me"`
-	RememberMeDuration    int  `mapstructure:"remember_me_duration"`
+	BaseURL               string `mapstructure:"base_url"`
+	DefaultSessionTimeout int    `mapstructure:"default_session_timeout"`
+	MaxConcurrentSessions int    `mapstructure:"max_concurrent_sessions"`
+	EnableSingleLogout    bool   `mapstructure:"enable_single_logout"`
+	EnableRememberMe      bool   `mapstructure:"enable_remember_me"`
+	RememberMeDuration    int    `mapstructure:"remember_me_duration"`
 }
 
 var AppConfig *Config

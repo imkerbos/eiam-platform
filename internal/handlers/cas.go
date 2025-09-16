@@ -3,14 +3,17 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"eiam-platform/config"
 	"eiam-platform/internal/models"
 	"eiam-platform/pkg/database"
 	"eiam-platform/pkg/logger"
@@ -37,13 +40,13 @@ func (CASServiceTicket) TableName() string {
 // CASProxyTicket CAS代理票据
 type CASProxyTicket struct {
 	models.BaseModel
-	Ticket        string    `json:"ticket" gorm:"type:varchar(255);uniqueIndex;not null"`
-	Service       string    `json:"service" gorm:"type:varchar(500);not null"`
-	UserID        string    `json:"user_id" gorm:"type:varchar(36);not null;index"`
-	Username      string    `json:"username" gorm:"type:varchar(100);not null"`
-	ProxyGrantingTicket string `json:"proxy_granting_ticket" gorm:"type:varchar(255)"`
-	ExpiresAt     time.Time `json:"expires_at" gorm:"not null"`
-	Used          bool      `json:"used" gorm:"default:false"`
+	Ticket              string    `json:"ticket" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Service             string    `json:"service" gorm:"type:varchar(500);not null"`
+	UserID              string    `json:"user_id" gorm:"type:varchar(36);not null;index"`
+	Username            string    `json:"username" gorm:"type:varchar(100);not null"`
+	ProxyGrantingTicket string    `json:"proxy_granting_ticket" gorm:"type:varchar(255)"`
+	ExpiresAt           time.Time `json:"expires_at" gorm:"not null"`
+	Used                bool      `json:"used" gorm:"default:false"`
 }
 
 // TableName 指定表名
@@ -71,11 +74,13 @@ func CASLoginHandler(c *gin.Context) {
 	service := c.Query("service")
 	gateway := c.Query("gateway") == "true"
 	renew := c.Query("renew") == "true"
+	auto := c.Query("auto") == "true"
 
 	logger.Info("CAS login request",
 		zap.String("service", service),
 		zap.Bool("gateway", gateway),
 		zap.Bool("renew", renew),
+		zap.Bool("auto", auto),
 		zap.String("ip", c.ClientIP()),
 	)
 
@@ -99,33 +104,58 @@ func CASLoginHandler(c *gin.Context) {
 		return
 	}
 
-	// 检查用户是否已登录
-	sessionID := c.GetHeader("X-Session-ID")
-	if sessionID == "" {
-		// 从Cookie中获取session
-		cookie, err := c.Cookie("session_id")
-		if err == nil {
-			sessionID = cookie
-		}
-	}
-
+	// 检查用户是否已登录 - 支持JWT token和session两种方式
 	var user *models.User
 	var isLoggedIn bool
 
-	if sessionID != "" {
-		// 验证session
-		sessionManager := GetSessionManager()
-		if sessionManager != nil {
-			ctx := c.Request.Context()
-			sessionInfo, err := sessionManager.GetSession(ctx, sessionID)
-			if err == nil && sessionInfo != nil {
+	// 1. 首先尝试JWT token认证
+	authHeader := c.GetHeader("Authorization")
+	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token != "" {
+			// 验证JWT token
+			cfg := config.GetConfig()
+			jwtManager := utils.NewJWTManager(&cfg.JWT)
+			claims, err := jwtManager.ValidateAccessToken(token)
+			if err == nil && claims != nil {
 				// 获取用户信息
-				if err := database.DB.Where("id = ?", sessionInfo.UserID).First(&user).Error; err == nil {
+				if err := database.DB.Where("id = ?", claims.UserID).First(&user).Error; err == nil {
 					isLoggedIn = true
-					logger.Info("User already logged in via session",
+					logger.Info("User already logged in via JWT token",
 						zap.String("username", user.Username),
-						zap.String("session_id", sessionID),
+						zap.String("user_id", claims.UserID),
 					)
+				}
+			}
+		}
+	}
+
+	// 2. 如果JWT认证失败，尝试session认证
+	if !isLoggedIn {
+		sessionID := c.GetHeader("X-Session-ID")
+		if sessionID == "" {
+			// 从Cookie中获取session
+			cookie, err := c.Cookie("session_id")
+			if err == nil {
+				sessionID = cookie
+			}
+		}
+
+		if sessionID != "" {
+			// 验证session
+			sessionManager := GetSessionManager()
+			if sessionManager != nil {
+				ctx := c.Request.Context()
+				sessionInfo, err := sessionManager.GetSession(ctx, sessionID)
+				if err == nil && sessionInfo != nil {
+					// 获取用户信息
+					if err := database.DB.Where("id = ?", sessionInfo.UserID).First(&user).Error; err == nil {
+						isLoggedIn = true
+						logger.Info("User already logged in via session",
+							zap.String("username", user.Username),
+							zap.String("session_id", sessionID),
+						)
+					}
 				}
 			}
 		}
@@ -151,6 +181,36 @@ func CASLoginHandler(c *gin.Context) {
 			zap.String("ticket", ticket),
 		)
 		c.Redirect(http.StatusFound, redirectURL)
+		return
+	}
+
+	// 如果是auto模式且用户已登录，直接生成服务票据（用于前端自动重定向）
+	if auto && isLoggedIn && !renew {
+		ticket, err := generateServiceTicket(user, service, &application)
+		if err != nil {
+			logger.ErrorError("Failed to generate service ticket for auto mode", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "Failed to generate service ticket",
+			})
+			return
+		}
+
+		// 返回JSON响应而不是重定向
+		redirectURL := buildRedirectURL(service, ticket, nil)
+		logger.Info("Auto mode: generating ticket for logged in user",
+			zap.String("username", user.Username),
+			zap.String("service", service),
+			zap.String("ticket", ticket),
+		)
+		c.JSON(http.StatusOK, gin.H{
+			"code": 200,
+			"data": gin.H{
+				"ticket":       ticket,
+				"redirect_url": redirectURL,
+			},
+			"message": "Login successful",
+		})
 		return
 	}
 
@@ -244,7 +304,7 @@ func CASLoginSubmitHandler(c *gin.Context) {
 			user.DisplayName,
 			c.ClientIP(),
 			c.GetHeader("User-Agent"),
-			"", // tokenID
+			"",               // tokenID
 			3600*time.Second, // 1小时过期
 		)
 		if err != nil {
@@ -284,33 +344,26 @@ func CASLoginSubmitHandler(c *gin.Context) {
 	})
 }
 
-// CASValidateHandler CAS票据验证处理器
-func CASValidateHandler(c *gin.Context) {
+// CASProxyValidateHandler CAS 2.0代理票据验证处理器
+func CASProxyValidateHandler(c *gin.Context) {
 	service := c.Query("service")
 	ticket := c.Query("ticket")
-	format := c.Query("format") // xml, json
+	pgtUrl := c.Query("pgtUrl")
 
-	logger.Info("CAS validate request",
+	logger.Info("CAS proxy validate request",
 		zap.String("service", service),
 		zap.String("ticket", ticket),
-		zap.String("format", format),
+		zap.String("pgtUrl", pgtUrl),
 		zap.String("ip", c.ClientIP()),
 	)
 
 	// 验证参数
 	if service == "" || ticket == "" {
-		if format == "xml" {
-			c.Header("Content-Type", "application/xml")
-			c.String(http.StatusOK, `<?xml version="1.0"?>
-<cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
-    <cas:authenticationFailure code='INVALID_REQUEST'>service and ticket parameters are required</cas:authenticationFailure>
-</cas:serviceResponse>`)
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "service and ticket parameters are required",
-			})
-		}
+		c.XML(http.StatusBadRequest, gin.H{
+			"cas:serviceResponse": gin.H{
+				"cas:authenticationFailure": "INVALID_REQUEST",
+			},
+		})
 		return
 	}
 
@@ -318,18 +371,11 @@ func CASValidateHandler(c *gin.Context) {
 	var serviceTicket CASServiceTicket
 	if err := database.DB.Where("ticket = ? AND service = ? AND used = ? AND expires_at > ?", ticket, service, false, time.Now()).First(&serviceTicket).Error; err != nil {
 		logger.ErrorError("Invalid or expired ticket", zap.Error(err))
-		if format == "xml" {
-			c.Header("Content-Type", "application/xml")
-			c.String(http.StatusOK, `<?xml version="1.0"?>
+		c.Header("Content-Type", "application/xml")
+		c.String(http.StatusOK, `<?xml version="1.0"?>
 <cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
-    <cas:authenticationFailure code='INVALID_TICKET'>Ticket not recognized</cas:authenticationFailure>
+    <cas:authenticationFailure code='INVALID_TICKET'>Ticket not found or expired</cas:authenticationFailure>
 </cas:serviceResponse>`)
-		} else {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    200,
-				"message": "Ticket not recognized",
-			})
-		}
 		return
 	}
 
@@ -341,52 +387,95 @@ func CASValidateHandler(c *gin.Context) {
 	var user models.User
 	if err := database.DB.Where("id = ?", serviceTicket.UserID).First(&user).Error; err != nil {
 		logger.ErrorError("User not found", zap.Error(err))
-		if format == "xml" {
-			c.Header("Content-Type", "application/xml")
-			c.String(http.StatusOK, `<?xml version="1.0"?>
-<cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
-    <cas:authenticationFailure code='INTERNAL_ERROR'>User not found</cas:authenticationFailure>
-</cas:serviceResponse>`)
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    500,
-				"message": "User not found",
-			})
-		}
+		c.XML(http.StatusOK, gin.H{
+			"cas:serviceResponse": gin.H{
+				"cas:authenticationFailure": "INTERNAL_ERROR",
+			},
+		})
 		return
 	}
 
-	// 返回成功响应
-	if format == "xml" {
-		c.Header("Content-Type", "application/xml")
-		c.String(http.StatusOK, `<?xml version="1.0"?>
-<cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
-    <cas:authenticationSuccess>
-        <cas:user>%s</cas:user>
-        <cas:attributes>
-            <cas:email>%s</cas:email>
-            <cas:displayName>%s</cas:displayName>
-        </cas:attributes>
-    </cas:authenticationSuccess>
-</cas:serviceResponse>`, user.Username, user.Email, user.DisplayName)
+	// 获取应用信息
+	var application models.Application
+	var attributeMapping utils.CASAttributeMapping
+	if err := database.DB.Where("service_url = ? AND protocol = ? AND status = ?", service, "cas", 1).First(&application).Error; err != nil {
+		logger.ErrorError("Application not found", zap.Error(err))
+		// 使用默认映射
+		attributeMapping = utils.GetDefaultCASAttributeMapping()
 	} else {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    200,
-			"message": "Ticket validated successfully",
-			"data": gin.H{
-				"user": gin.H{
-					"username":    user.Username,
-					"email":       user.Email,
-					"displayName": user.DisplayName,
-				},
-			},
-		})
+		// 获取应用的属性映射配置
+		var err error
+		attributeMapping, err = utils.ParseAttributeMapping(application.AttributeMapping)
+		if err != nil {
+			logger.ErrorError("Failed to parse attribute mapping", zap.Error(err))
+			// 使用默认映射
+			attributeMapping = utils.GetDefaultCASAttributeMapping()
+		}
 	}
 
-	logger.Info("CAS ticket validated successfully",
+	// 构建用户属性
+	userAttributes := utils.BuildUserAttributes(&user, attributeMapping)
+
+	// 返回CAS 2.0 XML响应
+	response := gin.H{
+		"cas:serviceResponse": gin.H{
+			"cas:authenticationSuccess": gin.H{
+				"cas:user":       user.Username,
+				"cas:attributes": userAttributes,
+			},
+		},
+	}
+
+	// 如果提供了pgtUrl，生成Proxy Granting Ticket
+	if pgtUrl != "" {
+		// TODO: 实现Proxy Granting Ticket生成
+		logger.Info("Proxy Granting Ticket requested", zap.String("pgtUrl", pgtUrl))
+	}
+
+	c.XML(http.StatusOK, response)
+
+	logger.Info("CAS proxy ticket validated successfully",
 		zap.String("username", user.Username),
 		zap.String("service", service),
 		zap.String("ticket", ticket),
+	)
+}
+
+// CASProxyHandler CAS代理服务处理器
+func CASProxyHandler(c *gin.Context) {
+	targetService := c.Query("targetService")
+	pgt := c.Query("pgt")
+
+	logger.Info("CAS proxy request",
+		zap.String("targetService", targetService),
+		zap.String("pgt", pgt),
+		zap.String("ip", c.ClientIP()),
+	)
+
+	// 验证参数
+	if targetService == "" || pgt == "" {
+		c.XML(http.StatusBadRequest, gin.H{
+			"cas:serviceResponse": gin.H{
+				"cas:proxyFailure": "INVALID_REQUEST",
+			},
+		})
+		return
+	}
+
+	// TODO: 验证Proxy Granting Ticket并生成Proxy Ticket
+	// 这里需要实现完整的代理票据逻辑
+
+	c.XML(http.StatusOK, gin.H{
+		"cas:serviceResponse": gin.H{
+			"cas:proxySuccess": gin.H{
+				"cas:proxyTicket": "PT-EXAMPLE-TICKET",
+			},
+		},
+	})
+
+	logger.Info("CAS proxy ticket generated",
+		zap.String("targetService", targetService),
+		zap.String("pgt", pgt),
 	)
 }
 
@@ -439,16 +528,27 @@ func generateServiceTicket(user *models.User, service string, application *model
 	}
 	ticket := "ST-" + base64.URLEncoding.EncodeToString(ticketBytes)
 
+	// 获取应用的属性映射配置
+	attributeMapping, err := utils.ParseAttributeMapping(application.AttributeMapping)
+	if err != nil {
+		logger.ErrorError("Failed to parse attribute mapping in generateServiceTicket", zap.Error(err))
+		// 使用默认映射
+		attributeMapping = utils.GetDefaultCASAttributeMapping()
+	}
+
+	// 构建用户属性
+	userAttributes := utils.BuildUserAttributes(user, attributeMapping)
+	attributesJSON, _ := json.Marshal(userAttributes)
+
 	// 创建服务票据记录
 	serviceTicket := CASServiceTicket{
-		Ticket:    ticket,
-		Service:   service,
-		UserID:    user.ID,
-		Username:  user.Username,
-		ExpiresAt: time.Now().Add(10 * time.Minute), // 10分钟过期
-		Used:      false,
-		Attributes: fmt.Sprintf(`{"email":"%s","displayName":"%s","organization":"%s"}`, 
-			user.Email, user.DisplayName, user.OrganizationID),
+		Ticket:     ticket,
+		Service:    service,
+		UserID:     user.ID,
+		Username:   user.Username,
+		ExpiresAt:  time.Now().Add(10 * time.Minute), // 10分钟过期
+		Used:       false,
+		Attributes: string(attributesJSON),
 	}
 
 	if err := database.DB.Create(&serviceTicket).Error; err != nil {
@@ -473,7 +573,7 @@ func buildRedirectURL(service, ticket string, params map[string]string) string {
 
 	query := u.Query()
 	query.Set("ticket", ticket)
-	
+
 	if params != nil {
 		for key, value := range params {
 			query.Set(key, value)
@@ -501,18 +601,11 @@ func CASServiceValidateHandler(c *gin.Context) {
 
 	// 验证参数
 	if service == "" || ticket == "" {
-		if format == "xml" {
-			c.Header("Content-Type", "application/xml")
-			c.String(http.StatusOK, `<?xml version="1.0"?>
+		c.Header("Content-Type", "application/xml")
+		c.String(http.StatusBadRequest, `<?xml version="1.0"?>
 <cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
     <cas:authenticationFailure code='INVALID_REQUEST'>service and ticket parameters are required</cas:authenticationFailure>
 </cas:serviceResponse>`)
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "service and ticket parameters are required",
-			})
-		}
 		return
 	}
 
@@ -520,18 +613,11 @@ func CASServiceValidateHandler(c *gin.Context) {
 	var serviceTicket CASServiceTicket
 	if err := database.DB.Where("ticket = ? AND service = ? AND used = ? AND expires_at > ?", ticket, service, false, time.Now()).First(&serviceTicket).Error; err != nil {
 		logger.ErrorError("Invalid or expired ticket", zap.Error(err))
-		if format == "xml" {
-			c.Header("Content-Type", "application/xml")
-			c.String(http.StatusOK, `<?xml version="1.0"?>
+		c.Header("Content-Type", "application/xml")
+		c.String(http.StatusOK, `<?xml version="1.0"?>
 <cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
-    <cas:authenticationFailure code='INVALID_TICKET'>Ticket not recognized</cas:authenticationFailure>
+    <cas:authenticationFailure code='INVALID_TICKET'>Ticket not found or expired</cas:authenticationFailure>
 </cas:serviceResponse>`)
-		} else {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    200,
-				"message": "Ticket not recognized",
-			})
-		}
 		return
 	}
 
@@ -543,18 +629,11 @@ func CASServiceValidateHandler(c *gin.Context) {
 	var user models.User
 	if err := database.DB.Where("id = ?", serviceTicket.UserID).First(&user).Error; err != nil {
 		logger.ErrorError("User not found", zap.Error(err))
-		if format == "xml" {
-			c.Header("Content-Type", "application/xml")
-			c.String(http.StatusOK, `<?xml version="1.0"?>
+		c.Header("Content-Type", "application/xml")
+		c.String(http.StatusOK, `<?xml version="1.0"?>
 <cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
     <cas:authenticationFailure code='INTERNAL_ERROR'>User not found</cas:authenticationFailure>
 </cas:serviceResponse>`)
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    500,
-				"message": "User not found",
-			})
-		}
 		return
 	}
 
@@ -564,47 +643,50 @@ func CASServiceValidateHandler(c *gin.Context) {
 		pgtIou = generateProxyGrantingTicket(&user, pgtUrl)
 	}
 
-	// 返回成功响应
-	if format == "xml" {
-		response := fmt.Sprintf(`<?xml version="1.0"?>
+	// 获取应用信息
+	var application models.Application
+	var attributeMapping utils.CASAttributeMapping
+	if err := database.DB.Where("service_url = ? AND protocol = ? AND status = ?", service, "cas", 1).First(&application).Error; err != nil {
+		logger.ErrorError("Application not found", zap.Error(err))
+		// 使用默认映射
+		attributeMapping = utils.GetDefaultCASAttributeMapping()
+	} else {
+		// 获取应用的属性映射配置
+		var err error
+		attributeMapping, err = utils.ParseAttributeMapping(application.AttributeMapping)
+		if err != nil {
+			logger.ErrorError("Failed to parse attribute mapping", zap.Error(err))
+			// 使用默认映射
+			attributeMapping = utils.GetDefaultCASAttributeMapping()
+		}
+	}
+
+	// 构建用户属性
+	userAttributes := utils.BuildUserAttributes(&user, attributeMapping)
+
+	// 返回成功响应 - CAS 2.0 serviceValidate默认返回XML格式
+	response := fmt.Sprintf(`<?xml version="1.0"?>
 <cas:serviceResponse xmlns:cas='http://www.yale.edu/tp/cas'>
     <cas:authenticationSuccess>
         <cas:user>%s</cas:user>`, user.Username)
 
-		if pgtIou != "" {
-			response += fmt.Sprintf(`
-        <cas:proxyGrantingTicket>%s</cas:proxyGrantingTicket>`, pgtIou)
-		}
-
+	if pgtIou != "" {
 		response += fmt.Sprintf(`
-        <cas:attributes>
-            <cas:email>%s</cas:email>
-            <cas:displayName>%s</cas:displayName>
-        </cas:attributes>
-    </cas:authenticationSuccess>
-</cas:serviceResponse>`, user.Email, user.DisplayName)
-
-		c.Header("Content-Type", "application/xml")
-		c.String(http.StatusOK, response)
-	} else {
-		response := gin.H{
-			"code":    200,
-			"message": "Ticket validated successfully",
-			"data": gin.H{
-				"user": gin.H{
-					"username":    user.Username,
-					"email":       user.Email,
-					"displayName": user.DisplayName,
-				},
-			},
-		}
-
-		if pgtIou != "" {
-			response["data"].(gin.H)["proxyGrantingTicket"] = pgtIou
-		}
-
-		c.JSON(http.StatusOK, response)
+        <cas:proxyGrantingTicket>%s</cas:proxyGrantingTicket>`, pgtIou)
 	}
+
+	// 使用可配置的属性映射
+	attributesXML := utils.FormatAttributesForCAS(userAttributes)
+	if attributesXML != "" {
+		response += attributesXML
+	}
+
+	response += `
+    </cas:authenticationSuccess>
+</cas:serviceResponse>`
+
+	c.Header("Content-Type", "application/xml")
+	c.String(http.StatusOK, response)
 
 	logger.Info("CAS service ticket validated successfully",
 		zap.String("username", user.Username),

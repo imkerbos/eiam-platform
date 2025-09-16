@@ -55,6 +55,9 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 
 	// 公开API端点（不需要认证）
 	r.GET("/public/site-info", handlers.GetPublicSiteInfoHandler)
+	r.GET("/public/cas-server-info", handlers.GetCASServerInfoHandler)
+	r.GET("/public/saml-server-info", handlers.GetSAMLServerInfoHandler)
+	r.GET("/public/oidc-server-info", handlers.GetOIDCServerInfoHandler)
 
 	// CAS协议端点（不需要认证）
 	cas := r.Group("/cas")
@@ -63,7 +66,19 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 		cas.POST("/login", handlers.CASLoginSubmitHandler)
 		cas.GET("/validate", handlers.CASValidateHandler)
 		cas.GET("/serviceValidate", handlers.CASServiceValidateHandler)
+		cas.GET("/proxyValidate", handlers.CASProxyValidateHandler)
+		cas.GET("/proxy", handlers.CASProxyHandler)
 		cas.GET("/logout", handlers.CASLogoutHandler)
+	}
+
+	// SAML协议端点（不需要认证）- 使用crewjam/saml库
+	saml := r.Group("/saml")
+	{
+		saml.GET("/metadata", handlers.SAMLMetadataHandlerIDP)
+		saml.Any("/sso", handlers.SAMLSSOHandlerIDP)
+		saml.Any("/sls", handlers.SAMLSLSHandlerIDP)
+		saml.Any("/acs", handlers.SAMLSSOHandlerIDP)   // Assertion Consumer Service
+		saml.Any("/login", handlers.SAMLSSOHandlerIDP) // Alternative login endpoint
 	}
 
 	// API路由组

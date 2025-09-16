@@ -47,6 +47,9 @@
             </template>
             <a-menu-item key="applications">Applications</a-menu-item>
             <a-menu-item key="application-groups">Application Groups</a-menu-item>
+            <a-menu-item key="cas-server-info">CAS Server Info</a-menu-item>
+            <a-menu-item key="saml-server-info">SAML Server Info</a-menu-item>
+            <a-menu-item key="oidc-server-info">OIDC Server Info</a-menu-item>
           </a-sub-menu>
           
           <a-menu-item key="audit">

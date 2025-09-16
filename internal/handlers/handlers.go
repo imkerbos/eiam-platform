@@ -3448,12 +3448,42 @@ func CreateApplicationHandler(c *gin.Context) {
 	var req struct {
 		Name        string                 `json:"name" binding:"required"`
 		Type        string                 `json:"type" binding:"required"`
+		Protocol    string                 `json:"protocol"`
 		Description string                 `json:"description"`
 		GroupID     string                 `json:"groupId"`
 		Status      int                    `json:"status"`
 		HomepageURL string                 `json:"homepageUrl"`
 		LogoURL     string                 `json:"logoUrl"`
 		Config      map[string]interface{} `json:"config"`
+
+		// OAuth2/OIDC配置字段
+		ClientID        string `json:"clientId"`
+		ClientSecret    string `json:"clientSecret"`
+		RedirectURIs    string `json:"redirectUris"`
+		Scopes          string `json:"scopes"`
+		GrantTypes      string `json:"grantTypes"`
+		ResponseTypes   string `json:"responseTypes"`
+		AccessTokenTTL  int    `json:"accessTokenTTL"`
+		RefreshTokenTTL int    `json:"refreshTokenTTL"`
+
+		// SAML配置字段
+		EntityID           string `json:"entity_id"`
+		AcsURL             string `json:"acs_url"`
+		SloURL             string `json:"slo_url"`
+		Certificate        string `json:"certificate"`
+		SignatureAlgorithm string `json:"signature_algorithm"`
+		DigestAlgorithm    string `json:"digest_algorithm"`
+
+		// CAS配置字段
+		ServiceURL string `json:"service_url"`
+		Gateway    bool   `json:"gateway"`
+		Renew      bool   `json:"renew"`
+
+		// LDAP配置字段
+		LdapURL      string `json:"ldapUrl"`
+		BaseDN       string `json:"baseDn"`
+		BindDN       string `json:"bindDn"`
+		BindPassword string `json:"bindPassword"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -3493,8 +3523,35 @@ func CreateApplicationHandler(c *gin.Context) {
 		Status:       models.Status(req.Status),
 		HomePageURL:  req.HomepageURL,
 		Logo:         req.LogoURL,
-		Protocol:     req.Type,
-		AppType:      "web", // 默认web类型
+		Protocol:     req.Protocol, // 使用Protocol字段
+		AppType:      "web",        // 默认web类型
+
+		// OAuth2/OIDC配置
+		RedirectURIs:    req.RedirectURIs,
+		Scopes:          req.Scopes,
+		GrantTypes:      req.GrantTypes,
+		ResponseTypes:   req.ResponseTypes,
+		AccessTokenTTL:  req.AccessTokenTTL,
+		RefreshTokenTTL: req.RefreshTokenTTL,
+
+		// SAML配置
+		EntityID:           req.EntityID,
+		AcsURL:             req.AcsURL,
+		SloURL:             req.SloURL,
+		Certificate:        req.Certificate,
+		SignatureAlgorithm: req.SignatureAlgorithm,
+		DigestAlgorithm:    req.DigestAlgorithm,
+
+		// CAS配置
+		ServiceURL: req.ServiceURL,
+		Gateway:    req.Gateway,
+		Renew:      req.Renew,
+
+		// LDAP配置
+		LdapURL:      req.LdapURL,
+		BaseDN:       req.BaseDN,
+		BindDN:       req.BindDN,
+		BindPassword: req.BindPassword,
 	}
 
 	// 只有当提供了有效的GroupID时才设置
@@ -3559,7 +3616,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 		DigestAlgorithm    string `json:"digest_algorithm"`
 
 		// CAS配置字段
-		ServiceURL string `json:"serviceUrl"`
+		ServiceURL string `json:"service_url"`
 		Gateway    bool   `json:"gateway"`
 		Renew      bool   `json:"renew"`
 

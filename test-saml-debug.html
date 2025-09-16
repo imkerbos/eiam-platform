@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SAML 调试测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-box { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; }
+        .error { background: #f8d7da; }
+        button { background: #007cba; color: white; padding: 8px 15px; border: none; border-radius: 3px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🔍 SAML 调试测试</h1>
+    
+    <div class="test-box">
+        <h3>测试步骤：</h3>
+        <button onclick="testBackendDirect()">1. 测试后端直接访问 (8080)</button>
+        <button onclick="testFrontendProxy()">2. 测试前端代理 (3000)</button>
+        <button onclick="testOtherProxies()">3. 测试其他代理端点</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        async function testBackendDirect() {
+            addResult("⏳ 测试后端直接访问 http://localhost:8080/saml/metadata");
+            try {
+                const response = await fetch('http://localhost:8080/saml/metadata');
+                if (response.ok) {
+                    const data = await response.text();
+                    addResult(`✅ 后端直接访问成功! 状态: ${response.status}`, 'success');
+                    addResult(`响应长度: ${data.length} 字符`, 'success');
+                } else {
+                    addResult(`❌ 后端直接访问失败! 状态: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ 后端直接访问错误: ${error.message}`, 'error');
+                addResult(`💡 请确保后端服务器已启动: go run cmd/server/main.go`, 'error');
+            }
+        }
+
+        async function testFrontendProxy() {
+            addResult("⏳ 测试前端代理 http://localhost:3000/saml/metadata");
+            try {
+                const response = await fetch('http://localhost:3000/saml/metadata');
+                if (response.ok) {
+                    const data = await response.text();
+                    addResult(`✅ 前端代理访问成功! 状态: ${response.status}`, 'success');
+                    addResult(`响应长度: ${data.length} 字符`, 'success');
+                } else {
+                    addResult(`❌ 前端代理访问失败! 状态: ${response.status}`, 'error');
+                    if (response.status === 404) {
+                        addResult(`💡 404错误可能原因:`, 'error');
+                        addResult(`1. 前端服务器需要重启以应用代理配置`, 'error');
+                        addResult(`2. 后端SAML路由未正确注册`, 'error');
+                    }
+                }
+            } catch (error) {
+                addResult(`❌ 前端代理访问错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function testOtherProxies() {
+            const endpoints = [
+                'http://localhost:3000/api/v1/site-info',
+                'http://localhost:3000/public/site-info',
+                'http://localhost:3000/cas/login'
+            ];
+
+            for (const endpoint of endpoints) {
+                addResult(`⏳ 测试其他代理端点: ${endpoint}`);
+                try {
+                    const response = await fetch(endpoint);
+                    addResult(`${response.ok ? '✅' : '❌'} ${endpoint} - 状态: ${response.status}`, response.ok ? 'success' : 'error');
+                } catch (error) {
+                    addResult(`❌ ${endpoint} - 错误: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        function addResult(message, type = '') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-box ${type}`;
+            div.innerHTML = `<p>${message}</p>`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        // 页面加载时显示说明
+        window.onload = function() {
+            addResult("📋 调试说明:");
+            addResult("1. 首先测试后端直接访问，确认SAML端点工作正常");
+            addResult("2. 然后测试前端代理，确认代理配置正确");
+            addResult("3. 如果前端代理404，请重启前端服务器: Ctrl+C 然后 npm run dev");
+        };
+    </script>
+</body>
+</html>

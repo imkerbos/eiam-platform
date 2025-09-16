@@ -1120,6 +1120,169 @@ func GetPublicSiteInfoHandler(c *gin.Context) {
 	})
 }
 
+// GetCASServerInfoHandler 获取CAS服务端信息（不需要认证）
+func GetCASServerInfoHandler(c *gin.Context) {
+	// 获取请求的Host头
+	host := c.GetHeader("Host")
+	if host == "" {
+		host = "localhost:3000"
+	}
+
+	// 获取协议
+	protocol := "http"
+	if c.GetHeader("X-Forwarded-Proto") == "https" || c.GetHeader("X-Forwarded-Ssl") == "on" {
+		protocol = "https"
+	}
+
+	// 构建基础URL - 通过前端代理访问
+	baseURL := fmt.Sprintf("%s://%s", protocol, host)
+
+	// CAS服务端信息
+	casServerInfo := gin.H{
+		"server_url":           baseURL,
+		"login_url":            fmt.Sprintf("%s/cas/login", baseURL),
+		"validate_url":         fmt.Sprintf("%s/cas/validate", baseURL),
+		"service_validate_url": fmt.Sprintf("%s/cas/serviceValidate", baseURL),
+		"proxy_validate_url":   fmt.Sprintf("%s/cas/proxyValidate", baseURL),
+		"proxy_url":            fmt.Sprintf("%s/cas/proxy", baseURL),
+		"logout_url":           fmt.Sprintf("%s/cas/logout", baseURL),
+		"protocol_version":     "CAS 2.0",
+		"supported_features": []string{
+			"CAS 1.0 validate",
+			"CAS 2.0 serviceValidate",
+			"CAS 2.0 proxyValidate",
+			"CAS 2.0 proxy",
+			"Gateway mode",
+			"Renew mode",
+			"Single logout",
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data":    casServerInfo,
+	})
+}
+
+// GetSAMLServerInfoHandler 获取SAML服务端信息（不需要认证）
+func GetSAMLServerInfoHandler(c *gin.Context) {
+	// 获取请求的Host头
+	host := c.GetHeader("Host")
+	if host == "" {
+		host = "localhost:3000"
+	}
+
+	// 获取协议
+	protocol := "http"
+	if c.GetHeader("X-Forwarded-Proto") == "https" || c.GetHeader("X-Forwarded-Ssl") == "on" {
+		protocol = "https"
+	}
+
+	// 构建基础URL - 通过前端代理访问
+	baseURL := fmt.Sprintf("%s://%s", protocol, host)
+
+	// SAML服务端信息 - 使用前端代理地址
+	// 在开发环境中使用前端代理地址，生产环境中使用实际域名
+	frontendURL := strings.Replace(baseURL, ":8080", ":3000", 1)
+	if !strings.Contains(baseURL, ":8080") {
+		frontendURL = baseURL // 生产环境直接使用配置的域名
+	}
+
+	samlServerInfo := gin.H{
+		"server_url":       frontendURL,
+		"entity_id":        fmt.Sprintf("%s/saml/metadata", frontendURL),
+		"metadata_url":     fmt.Sprintf("%s/saml/metadata", frontendURL),
+		"sso_url":          fmt.Sprintf("%s/saml/sso", frontendURL),
+		"sls_url":          fmt.Sprintf("%s/saml/sls", frontendURL),
+		"artifact_url":     fmt.Sprintf("%s/saml/artifact", frontendURL),
+		"protocol_version": "SAML 2.0",
+		"supported_bindings": []string{
+			"HTTP-POST",
+			"HTTP-Redirect",
+			"HTTP-Artifact",
+		},
+		"supported_features": []string{
+			"Single Sign-On (SSO)",
+			"Single Logout (SLO)",
+			"Identity Provider Initiated SSO",
+			"Service Provider Initiated SSO",
+			"Encrypted Assertions",
+			"Signed Assertions",
+			"Attribute Statements",
+		},
+		"certificate_info": gin.H{
+			"signing_certificate":    "Available via metadata",
+			"encryption_certificate": "Available via metadata",
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data":    samlServerInfo,
+	})
+}
+
+// GetOIDCServerInfoHandler 获取OIDC服务端信息（不需要认证）
+func GetOIDCServerInfoHandler(c *gin.Context) {
+	// 获取请求的Host头
+	host := c.GetHeader("Host")
+	if host == "" {
+		host = "localhost:3000"
+	}
+
+	// 获取协议
+	protocol := "http"
+	if c.GetHeader("X-Forwarded-Proto") == "https" || c.GetHeader("X-Forwarded-Ssl") == "on" {
+		protocol = "https"
+	}
+
+	// 构建基础URL - 通过前端代理访问
+	baseURL := fmt.Sprintf("%s://%s", protocol, host)
+
+	// OIDC服务端信息
+	oidcServerInfo := gin.H{
+		"server_url":                     baseURL,
+		"issuer":                         baseURL,
+		"discovery_url":                  fmt.Sprintf("%s/.well-known/openid_configuration", baseURL),
+		"authorization_endpoint":         fmt.Sprintf("%s/oauth2/authorize", baseURL),
+		"token_endpoint":                 fmt.Sprintf("%s/oauth2/token", baseURL),
+		"userinfo_endpoint":              fmt.Sprintf("%s/oauth2/userinfo", baseURL),
+		"jwks_uri":                       fmt.Sprintf("%s/.well-known/jwks.json", baseURL),
+		"end_session_endpoint":           fmt.Sprintf("%s/oauth2/logout", baseURL),
+		"introspection_endpoint":         fmt.Sprintf("%s/oauth2/introspect", baseURL),
+		"revocation_endpoint":            fmt.Sprintf("%s/oauth2/revoke", baseURL),
+		"protocol_version":               "OpenID Connect 1.0 (OAuth 2.1 compatible)",
+		"supported_response_types":       []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"},
+		"supported_grant_types":          []string{"authorization_code", "implicit", "refresh_token", "client_credentials"},
+		"supported_scopes":               []string{"openid", "profile", "email", "address", "phone", "offline_access"},
+		"supported_subject_types":        []string{"public"},
+		"supported_id_token_signing_alg": []string{"RS256", "HS256"},
+		"supported_claims":               []string{"sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "name", "email", "preferred_username"},
+		"supported_features": []string{
+			"Authorization Code Flow",
+			"Authorization Code Flow with PKCE",
+			"Implicit Flow",
+			"Hybrid Flow",
+			"Client Credentials Flow",
+			"Refresh Token",
+			"UserInfo Endpoint",
+			"JWT ID Tokens",
+			"PKCE (RFC 7636)",
+			"JWT Secured Authorization Response Mode (JARM)",
+			"OpenID Connect Discovery",
+			"Dynamic Client Registration",
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "Success",
+		"data":    oidcServerInfo,
+	})
+}
+
 // UploadLogoHandler 上传Logo
 func UploadLogoHandler(c *gin.Context) {
 	file, err := c.FormFile("logo")

@@ -71,6 +71,8 @@ login:
 
 # IdP configuration (for connecting to external SPs)
 idp:
+  # Base URL for IdP endpoints (used for SAML/OIDC metadata)
+  base_url: "http://localhost:3000" # 开发环境使用前端代理地址
   # Default session timeout
   default_session_timeout: 1800 # seconds (30 minutes)
   # Maximum concurrent sessions

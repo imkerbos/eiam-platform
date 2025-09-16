@@ -168,11 +168,11 @@ export const secureStorage = new SecureStorage()
  * 预定义的存储配置
  */
 export const StorageConfigs = {
-  // Access Token - 使用sessionStorage，页面关闭后自动清除，更安全
+  // Access Token - 使用localStorage，保持登录状态
   // 不设置expireTime，让JWT本身的过期时间来控制
   ACCESS_TOKEN: {
     key: 'access_token',
-    type: StorageType.SESSION,
+    type: StorageType.LOCAL,
     encrypt: true
     // 移除expireTime，依赖JWT token本身的过期时间
   } as StorageConfig,
@@ -185,10 +185,10 @@ export const StorageConfigs = {
     expireTime: 7 * 24 * 60 * 60 * 1000 // 7天
   } as StorageConfig,
 
-  // 用户基本信息 - 使用sessionStorage，不包含敏感信息
+  // 用户基本信息 - 使用localStorage，保持登录状态
   USER_INFO: {
     key: 'user_info',
-    type: StorageType.SESSION,
+    type: StorageType.LOCAL,
     encrypt: false // 用户基本信息不包含敏感数据，可以不加密以提高性能
   } as StorageConfig,
 

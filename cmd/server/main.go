@@ -50,6 +50,12 @@ func main() {
 	// Initialize session manager
 	handlers.InitSessionManager()
 
+	// Initialize SAML IdP (using crewjam/saml library)
+	if err := handlers.InitSAMLIDP(); err != nil {
+		logger.ErrorWarn("SAML IdP initialization failed", zap.Error(err))
+		// 不中断启动，SAML功能可能不可用
+	}
+
 	// Setup router
 	r := router.SetupRouter(cfg, jwtManager)
 

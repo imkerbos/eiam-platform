@@ -1446,6 +1446,7 @@ func GetUserApplicationsHandler(c *gin.Context) {
 						"name":        app.Name,
 						"description": app.Description,
 						"type":        app.AppType,
+						"protocol":    app.Protocol, // 添加协议字段
 						"status":      "active",
 						"url":         app.HomePageURL,
 						"logo":        app.Logo,

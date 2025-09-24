@@ -59,16 +59,16 @@ func SetupRouter(cfg *config.Config, jwtManager *utils.JWTManager) *gin.Engine {
 	r.GET("/public/saml-server-info", handlers.GetSAMLServerInfoHandler)
 	r.GET("/public/oidc-server-info", handlers.GetOIDCServerInfoHandler)
 
-	// CAS协议端点（不需要认证）
+	// CAS协议端点（不需要认证）- 改进版实现
 	cas := r.Group("/cas")
 	{
-		cas.GET("/login", handlers.CASLoginHandler)
-		cas.POST("/login", handlers.CASLoginSubmitHandler)
-		cas.GET("/validate", handlers.CASValidateHandler)
-		cas.GET("/serviceValidate", handlers.CASServiceValidateHandler)
-		cas.GET("/proxyValidate", handlers.CASProxyValidateHandler)
-		cas.GET("/proxy", handlers.CASProxyHandler)
-		cas.GET("/logout", handlers.CASLogoutHandler)
+		cas.GET("/login", handlers.CASLoginHandlerImproved)
+		cas.POST("/login", handlers.CASLoginSubmitHandlerImproved)
+		cas.GET("/validate", handlers.CASValidateHandlerImproved)
+		cas.GET("/serviceValidate", handlers.CASServiceValidateHandlerImproved)
+		cas.GET("/proxyValidate", handlers.CASProxyValidateHandler) // Keep original for now
+		cas.GET("/proxy", handlers.CASProxyHandler)                 // Keep original for now
+		cas.GET("/logout", handlers.CASLogoutHandler)               // Keep original for now
 	}
 
 	// SAML协议端点（不需要认证）- 使用crewjam/saml库
@@ -358,6 +358,7 @@ func setupPortalRoutes(portal *gin.RouterGroup, jwtManager *utils.JWTManager) {
 	{
 		userApps.GET("", handlers.GetUserApplicationsHandler)
 		userApps.GET("/:id", handlers.GetUserApplicationHandler)
+		userApps.GET("/:id/launch", handlers.LaunchApplicationHandler) // 应用启动端点
 	}
 }
 

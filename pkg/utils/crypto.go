@@ -176,3 +176,13 @@ func removePKCS7Padding(data []byte) []byte {
 
 	return data[:length-padding]
 }
+
+// Base64Encode encode data to base64 string
+func Base64Encode(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data)
+}
+
+// Base64Decode decode base64 string to data
+func Base64Decode(str string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(str)
+}

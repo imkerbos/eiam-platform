@@ -185,6 +185,7 @@ npm run dev
   - LDAP配置
 - 应用访问统计
 - 应用删除保护（关联检查）
+- **IdP-initiated SSO**: 支持身份提供商发起的单点登录
 
 ### 📊 系统监控
 - **Dashboard统计**: 用户数、组织数、在线用户数、应用数
@@ -245,6 +246,101 @@ npm run lint
 # 类型检查
 npm run type-check
 ```
+
+## 🔄 IdP-initiated SSO流程
+
+EIAM平台支持完整的身份提供商发起的单点登录（IdP-initiated SSO）流程，用户登录后可一键访问各种协议的第三方应用。
+
+### 流程架构图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant F as 前端(3000)
+    participant B as 后端(8080)
+    participant SP as 第三方应用
+
+    U->>F: 1. 登录EIAM平台
+    F->>B: 2. 获取应用列表(含protocol字段)
+    B-->>F: 3. 返回应用列表
+    U->>F: 4. 点击SAML/CAS应用
+    F->>B: 5. 跳转到 /api/v1/portal/applications/:id/launch
+    B->>B: 6. 验证用户身份
+    B->>B: 7. 根据protocol生成响应
+    
+    alt SAML应用
+        B-->>F: 8. 返回SAML POST表单
+        F->>SP: 9. 自动提交SAMLResponse到ACS
+    else CAS应用  
+        B-->>F: 8. 重定向到Service URL + ticket
+        F->>SP: 9. 跳转到CAS服务
+    else OAuth2/OIDC应用
+        B-->>F: 8. 重定向到授权端点 + code
+        F->>SP: 9. 跳转到OAuth2服务
+    end
+    
+    SP-->>U: 10. 用户无缝登录成功
+```
+
+### 协议支持详情
+
+#### 🔐 SAML 2.0 IdP
+- **元数据端点**: `GET /saml/metadata`
+- **SSO端点**: `ANY /saml/sso` (SP-initiated)
+- **SLS端点**: `ANY /saml/sls` (单点注销)
+- **IdP-initiated**: `GET /api/v1/portal/applications/:id/launch`
+- **断言签名**: 使用RSA-SHA256算法
+- **属性映射**: 支持用户属性和角色映射
+- **POST Binding**: 自动表单提交到SP的ACS URL
+
+#### 🎫 CAS 协议
+- **登录端点**: `GET/POST /cas/login` 
+- **票据验证**: 
+  - CAS 1.0: `GET /cas/validate` (纯文本响应)
+  - CAS 2.0: `GET /cas/serviceValidate` (XML/JSON响应)
+- **票据管理**: 使用go-cache + 数据库持久化
+- **IdP-initiated**: 生成Service Ticket并重定向
+- **Gateway模式**: 支持透明认证
+- **属性发布**: 支持用户属性传递
+
+#### 🔑 OAuth2/OIDC
+- **授权端点**: 标准OAuth2授权码流程
+- **令牌端点**: 支持多种grant类型
+- **用户信息端点**: 获取用户详细信息
+- **IdP-initiated**: 生成授权码并重定向
+- **PKCE支持**: 增强安全性（计划中）
+
+### 核心端点
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/v1/portal/applications` | GET | 获取用户应用列表（含protocol字段） |
+| `/api/v1/portal/applications/:id/launch` | GET | 启动应用（IdP-initiated SSO） |
+| `/saml/metadata` | GET | SAML IdP元数据 |
+| `/saml/sso` | ANY | SAML SSO端点 |
+| `/cas/login` | GET/POST | CAS登录端点 |
+| `/cas/serviceValidate` | GET | CAS票据验证 |
+| `/health` | GET | 系统健康检查 |
+
+### 技术实现
+
+#### SAML实现
+- **库**: `github.com/crewjam/saml` - 成熟的Go SAML库
+- **证书管理**: 自动生成RSA-2048密钥对和X.509证书
+- **签名算法**: RSA-SHA256
+- **断言生成**: 支持NameID、属性声明、角色映射
+- **POST Binding**: 自动HTML表单提交
+
+#### CAS实现  
+- **票据管理**: `github.com/patrickmn/go-cache` + 数据库持久化
+- **版本支持**: CAS 1.0/2.0协议
+- **响应格式**: 支持XML和JSON格式
+- **安全特性**: 票据过期、一次性使用、服务URL验证
+
+#### 前端集成
+- **智能路由**: 根据应用protocol字段选择启动方式
+- **用户体验**: 加载提示、错误处理、无缝跳转
+- **类型安全**: 完整的TypeScript类型定义
 
 ## 📊 API文档
 

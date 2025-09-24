@@ -274,19 +274,34 @@ const handleSearchChange = (e: any) => {
 }
 
 // Methods
-const openApplication = (app: any) => {
+const openApplication = async (app: any) => {
   try {
-    if (app.type === 'Mobile') {
-      // Handle mobile app launch
+    // 检查应用协议类型，决定启动方式
+    if (app.protocol && ['saml', 'cas', 'oauth2', 'oidc'].includes(app.protocol)) {
+      // SSO协议应用：调用后端启动API
+      message.loading(`Launching ${app.name}...`, 1)
+      
+      // 直接跳转到启动端点，让后端处理SSO流程
+      window.location.href = `/api/v1/portal/applications/${app.id}/launch`
+      
+    } else if (app.type === 'Mobile') {
+      // 移动应用
       message.info(`Launching ${app.name} mobile app...`)
+      
     } else if (app.type === 'API') {
-      // Handle API service
+      // API服务
       message.info(`Accessing ${app.name} API...`)
+      
     } else {
-      // Handle web application
-      window.open(app.url, '_blank')
+      // 普通Web应用：直接跳转
+      if (app.url) {
+        window.open(app.url, '_blank')
+      } else {
+        message.warning(`${app.name} URL not configured`)
+      }
     }
   } catch (error) {
+    console.error('Failed to launch application:', error)
     message.error(`Failed to launch ${app.name}`)
   }
 }

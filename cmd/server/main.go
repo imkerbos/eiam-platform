@@ -56,6 +56,12 @@ func main() {
 		// 不中断启动，SAML功能可能不可用
 	}
 
+	// Initialize CAS using improved implementation
+	if err := handlers.InitCASImproved(); err != nil {
+		logger.ErrorWarn("CAS improved initialization failed", zap.Error(err))
+		// 不中断启动，CAS功能可能不可用
+	}
+
 	// Setup router
 	r := router.SetupRouter(cfg, jwtManager)
 

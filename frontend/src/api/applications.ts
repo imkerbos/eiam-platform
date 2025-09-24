@@ -7,6 +7,7 @@ export interface Application {
   name: string
   description: string
   type: string
+  protocol?: string  // 添加协议字段
   status: string
   url: string
   logo?: string
@@ -94,5 +95,10 @@ export const applicationApi = {
   // Delete application
   deleteApplication: (id: string) => {
     return http.delete(`/console/applications/${id}`)
+  },
+
+  // Launch application (for portal)
+  launchApplication: (id: string) => {
+    return http.get(`/portal/applications/${id}/launch`)
   }
 }

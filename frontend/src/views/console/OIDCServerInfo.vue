@@ -282,25 +282,25 @@
                 
                 <p><strong>3. Implement authentication flow:</strong></p>
                 <ul>
-                  <li><strong>授权码流程（推荐）：</strong>重定向用户到授权端点 → 获取授权码 → 交换访问令牌</li>
-                  <li><strong>隐式流程：</strong>直接在授权端点获取访问令牌（适用于SPA）</li>
-                  <li><strong>混合流程：</strong>结合授权码和隐式流程的特点</li>
-                  <li>使用PKCE增强安全性（推荐用于公共客户端）</li>
+                  <li><strong>Authorization Code Flow (Recommended):</strong> Redirect user to authorization endpoint → Get authorization code → Exchange for access token</li>
+                  <li><strong>Implicit Flow:</strong> Get access token directly from authorization endpoint (suitable for SPAs)</li>
+                  <li><strong>Hybrid Flow:</strong> Combines features of authorization code and implicit flows</li>
+                  <li>Use PKCE for enhanced security (recommended for public clients)</li>
                 </ul>
                 
-                <p><strong>4. 验证和使用令牌：</strong></p>
+                <p><strong>4. Token Validation and Usage:</strong></p>
                 <ul>
-                  <li>验证ID Token的签名和声明</li>
-                  <li>使用访问令牌调用用户信息端点获取用户详情</li>
-                  <li>使用刷新令牌获取新的访问令牌</li>
-                  <li>实现适当的令牌存储和管理策略</li>
+                  <li>Validate ID Token signature and claims</li>
+                  <li>Use access token to call user info endpoint for user details</li>
+                  <li>Use refresh token to obtain new access tokens</li>
+                  <li>Implement proper token storage and management strategies</li>
                 </ul>
                 
-                <p><strong>5. 注销处理：</strong></p>
+                <p><strong>5. Logout Handling:</strong></p>
                 <ul>
-                  <li>实现本地注销（清除本地会话和令牌）</li>
-                  <li>实现远程注销（重定向到注销端点）</li>
-                  <li>处理单点注销回调</li>
+                  <li>Implement local logout (clear local session and tokens)</li>
+                  <li>Implement remote logout (redirect to logout endpoint)</li>
+                  <li>Handle single logout callbacks</li>
                 </ul>
               </div>
             </template>

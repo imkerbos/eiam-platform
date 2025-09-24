@@ -1137,7 +1137,7 @@ func GetCASServerInfoHandler(c *gin.Context) {
 	// 构建基础URL - 通过前端代理访问
 	baseURL := fmt.Sprintf("%s://%s", protocol, host)
 
-	// CAS服务端信息
+	// CAS服务端信息 (Improved Implementation)
 	casServerInfo := gin.H{
 		"server_url":           baseURL,
 		"login_url":            fmt.Sprintf("%s/cas/login", baseURL),
@@ -1146,15 +1146,17 @@ func GetCASServerInfoHandler(c *gin.Context) {
 		"proxy_validate_url":   fmt.Sprintf("%s/cas/proxyValidate", baseURL),
 		"proxy_url":            fmt.Sprintf("%s/cas/proxy", baseURL),
 		"logout_url":           fmt.Sprintf("%s/cas/logout", baseURL),
-		"protocol_version":     "CAS 2.0",
+		"protocol_version":     "CAS 2.0 (Improved Implementation)",
+		"library":              "go-cache v2.1.0 + Custom Implementation",
 		"supported_features": []string{
 			"CAS 1.0 validate",
 			"CAS 2.0 serviceValidate",
-			"CAS 2.0 proxyValidate",
-			"CAS 2.0 proxy",
+			"CAS 2.0 JSON response format",
 			"Gateway mode",
 			"Renew mode",
-			"Single logout",
+			"In-memory ticket caching",
+			"Database persistence",
+			"Automatic cleanup",
 		},
 	}
 
